@@ -4,7 +4,7 @@ Tags: 61labs, plugins, hub, instalador, marketplace
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,6 +48,11 @@ Não. Os plugins instalados pelo Hub são independentes e continuam funcionando 
 Instalar e ativar plugins exige a permissão `install_plugins` (normalmente administradores).
 
 == Changelog ==
+
+= 1.1.0 =
+* Cada card agora mostra a versão instalada e a última versão publicada.
+* Aviso de "Atualização disponível" com botão para atualizar o plugin direto do Hub.
+* Correção: os avisos do WordPress não aparecem mais dentro do cabeçalho escuro (marcador wp-header-end).
 
 = 1.0.0 =
 * Lançamento inicial: grade de plugins, instalação/ativação com um clique, envio de ideia e contato com o suporte.

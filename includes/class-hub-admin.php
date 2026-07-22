@@ -51,6 +51,13 @@ class Hub61_Admin {
 			'i18n'  => array(
 				'installing' => __( 'Instalando…', 'hub-61labs' ),
 				'activating' => __( 'Ativando…', 'hub-61labs' ),
+				'updating'   => __( 'Atualizando…', 'hub-61labs' ),
+				'update'     => __( 'Atualizar', 'hub-61labs' ),
+				'updateAvail'=> __( 'Atualização disponível', 'hub-61labs' ),
+				'upToDate'   => __( 'Atualizado', 'hub-61labs' ),
+				'checking'   => __( 'verificando…', 'hub-61labs' ),
+				'installed'  => __( 'Instalada:', 'hub-61labs' ),
+				'latest'     => __( 'Última:', 'hub-61labs' ),
 				'error'      => __( 'Ocorreu um erro. Tente novamente.', 'hub-61labs' ),
 			),
 		) );
@@ -81,6 +88,9 @@ class Hub61_Admin {
 				</div>
 			</div>
 
+			<?php // Marcador do WordPress: reposiciona os admin notices para DEPOIS do header (fora da faixa escura). ?>
+			<hr class="wp-header-end">
+
 			<?php if ( ! $can_install ) : ?>
 				<div class="hub61-notice hub61-notice-warn">
 					<?php esc_html_e( 'Seu usuário não tem permissão para instalar plugins. Fale com um administrador do site.', 'hub-61labs' ); ?>
@@ -95,9 +105,10 @@ class Hub61_Admin {
 
 				<div class="hub61-grid">
 					<?php foreach ( $catalog as $item ) :
-						$state = Hub61_Installer::state( $item );
+						$state     = Hub61_Installer::state( $item );
+						$installed = Hub61_Installer::installed_version( $item );
 						?>
-						<article class="hub61-card" data-slug="<?php echo esc_attr( $item['slug'] ); ?>" data-file="<?php echo esc_attr( $item['plugin_file'] ); ?>" data-admin="<?php echo esc_url( admin_url( $item['admin_url'] ) ); ?>">
+						<article class="hub61-card" data-slug="<?php echo esc_attr( $item['slug'] ); ?>" data-file="<?php echo esc_attr( $item['plugin_file'] ); ?>" data-admin="<?php echo esc_url( admin_url( $item['admin_url'] ) ); ?>" data-installed="<?php echo esc_attr( $installed ); ?>">
 							<div class="hub61-card-top">
 								<span class="hub61-card-icon" aria-hidden="true"><?php echo self::plugin_icon( $item['icon'] ); // phpcs:ignore ?></span>
 								<span class="hub61-chip"><?php echo esc_html( $item['category'] ); ?></span>
@@ -105,6 +116,17 @@ class Hub61_Admin {
 							<h3 class="hub61-card-title"><?php echo esc_html( $item['name'] ); ?></h3>
 							<p class="hub61-card-tagline"><?php echo esc_html( $item['tagline'] ); ?></p>
 							<p class="hub61-card-desc"><?php echo esc_html( $item['description'] ); ?></p>
+							<div class="hub61-card-meta">
+								<span class="hub61-ver hub61-ver-installed"<?php echo '' === $installed ? ' hidden' : ''; ?>>
+									<?php esc_html_e( 'Instalada:', 'hub-61labs' ); ?>
+									<b class="hub61-ver-installed-num">v<?php echo esc_html( $installed ); ?></b>
+								</span>
+								<span class="hub61-ver hub61-ver-latest">
+									<?php esc_html_e( 'Última:', 'hub-61labs' ); ?>
+									<b class="hub61-ver-latest-num">…</b>
+								</span>
+								<span class="hub61-ver-badge" hidden></span>
+							</div>
 							<div class="hub61-card-foot" data-state="<?php echo esc_attr( $state ); ?>">
 								<?php self::render_action( $item, $state, $can_install ); ?>
 							</div>

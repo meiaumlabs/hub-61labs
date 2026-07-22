@@ -105,6 +105,18 @@
 }
 .hub61-card-tagline { margin: 3px 0 0; font-size: 12.5px; font-weight: 600; color: var(--h-link); }
 .hub61-card-desc { margin: 10px 0 0; font-size: 13px; line-height: 1.5; color: var(--h-muted); flex: 1; }
+.hub61-card-meta {
+	display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+	margin-top: 14px; font-size: 12px; color: var(--h-muted);
+}
+.hub61-ver { display: inline-flex; align-items: center; gap: 5px; }
+.hub61-ver b { color: var(--h-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.hub61-ver-badge {
+	display: inline-flex; align-items: center; gap: 5px;
+	font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+	background: var(--h-signal); color: var(--h-signal-ink);
+	border: 1px solid var(--h-signal-d);
+}
 .hub61-card-foot {
 	display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
 	margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--h-line);
@@ -123,6 +135,8 @@
 .hub61-btn-primary:hover { background: var(--h-ink-d); color: #fff; }
 .hub61-btn-dark { background: var(--h-ink); color: #fff; border-color: var(--h-ink); }
 .hub61-btn-dark:hover { background: var(--h-ink-d); color: #fff; }
+.hub61-btn-signal { background: var(--h-signal); color: var(--h-signal-ink); border-color: var(--h-signal-d); }
+.hub61-btn-signal:hover { background: var(--h-signal-d); color: var(--h-signal-ink); }
 .hub61-btn-ghost { background: transparent; color: var(--h-text); border-color: var(--h-line); }
 .hub61-header .hub61-btn-ghost { color: #fff; border-color: rgba(255,255,255,.24); background: rgba(255,255,255,.04); }
 .hub61-header .hub61-btn-ghost:hover { background: rgba(255,255,255,.12); color: #fff; }

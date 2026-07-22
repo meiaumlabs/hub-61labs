@@ -47,15 +47,74 @@
 			foot.innerHTML =
 				'<span class="hub61-status hub61-status-active"><span aria-hidden="true">\u25CF</span> Ativo</span>' +
 				'<a class="hub61-btn hub61-btn-ghost hub61-open" href="' + adminUrl + '">Abrir</a>';
-			return;
-		}
-		if ( state === 'inactive' ) {
+		} else if ( state === 'inactive' ) {
 			foot.innerHTML =
 				'<button type="button" class="hub61-btn hub61-btn-primary hub61-do" data-act="activate">Ativar</button>';
-			return;
+		} else {
+			foot.innerHTML =
+				'<button type="button" class="hub61-btn hub61-btn-primary hub61-do" data-act="install">Instalar</button>';
 		}
-		foot.innerHTML =
-			'<button type="button" class="hub61-btn hub61-btn-primary hub61-do" data-act="install">Instalar</button>';
+		// Reaplica o botão de atualização se ainda houver update pendente.
+		if ( card.__update ) {
+			applyUpdateUI( card, card.__update );
+		}
+	}
+
+	// Preenche/atualiza a meta de versões e o botão de atualização de um card.
+	function applyVersions( card, info ) {
+		var latestEl = card.querySelector( '.hub61-ver-latest-num' );
+		var instWrap = card.querySelector( '.hub61-ver-installed' );
+		var instEl = card.querySelector( '.hub61-ver-installed-num' );
+
+		if ( info.installed && instWrap && instEl ) {
+			instEl.textContent = 'v' + info.installed;
+			instWrap.hidden = false;
+			card.setAttribute( 'data-installed', info.installed );
+		}
+		if ( latestEl ) {
+			latestEl.textContent = info.latest ? ( 'v' + info.latest ) : '—';
+		}
+		card.__update = info.update ? info.latest : null;
+		applyUpdateUI( card, card.__update );
+	}
+
+	// Mostra o badge "Atualização disponível" e injeta o botão Atualizar.
+	function applyUpdateUI( card, latest ) {
+		var badge = card.querySelector( '.hub61-ver-badge' );
+		var foot = card.querySelector( '.hub61-card-foot' );
+		if ( latest ) {
+			if ( badge ) {
+				badge.textContent = ( i18n.updateAvail || 'Atualização disponível' ) + ' \u2192 v' + latest;
+				badge.hidden = false;
+				badge.classList.add( 'is-update' );
+			}
+			if ( foot && ! foot.querySelector( '.hub61-update' ) ) {
+				var btn = document.createElement( 'button' );
+				btn.type = 'button';
+				btn.className = 'hub61-btn hub61-btn-signal hub61-update';
+				btn.setAttribute( 'data-act', 'update' );
+				btn.textContent = i18n.update || 'Atualizar';
+				foot.appendChild( btn );
+			}
+		} else if ( badge ) {
+			badge.hidden = true;
+			badge.classList.remove( 'is-update' );
+		}
+	}
+
+	// Consulta as versões (instalada + última) de todos os cards de uma vez.
+	function loadVersions() {
+		post( 'hub61_versions', {} ).then( function ( res ) {
+			if ( ! res || ! res.success ) {
+				return;
+			}
+			Object.keys( res.data ).forEach( function ( slug ) {
+				var card = document.querySelector( '.hub61-card[data-slug="' + slug + '"]' );
+				if ( card ) {
+					applyVersions( card, res.data[ slug ] );
+				}
+			} );
+		} ).catch( function () {} );
 	}
 
 	function handleAction( btn ) {
@@ -63,14 +122,27 @@
 		var foot = card.querySelector( '.hub61-card-foot' );
 		var slug = card.getAttribute( 'data-slug' );
 		var act = btn.getAttribute( 'data-act' );
-		var action = act === 'activate' ? 'hub61_activate' : 'hub61_install';
+		var actionMap = { activate: 'hub61_activate', update: 'hub61_update', install: 'hub61_install' };
+		var busyMap = { activate: i18n.activating || 'Ativando…', update: i18n.updating || 'Atualizando…', install: i18n.installing || 'Instalando…' };
+		var labelMap = { activate: 'Ativar', update: i18n.update || 'Atualizar', install: 'Instalar' };
 
 		btn.classList.add( 'is-busy' );
 		btn.disabled = true;
-		btn.textContent = act === 'activate' ? ( i18n.activating || 'Ativando…' ) : ( i18n.installing || 'Instalando…' );
+		btn.textContent = busyMap[ act ];
 
-		post( action, { slug: slug } ).then( function ( res ) {
+		post( actionMap[ act ] || 'hub61_install', { slug: slug } ).then( function ( res ) {
 			if ( res && res.success ) {
+				if ( act === 'update' ) {
+					// Update concluído: limpa o pendente e atualiza a meta de versões.
+					card.__update = null;
+					var badge = card.querySelector( '.hub61-ver-badge' );
+					if ( badge ) { badge.hidden = true; }
+					applyVersions( card, {
+						installed: res.data.installed || card.getAttribute( 'data-installed' ),
+						latest: res.data.latest || '',
+						update: false
+					} );
+				}
 				renderState( card, res.data.state || 'active' );
 				if ( res.data.message ) {
 					message( card.querySelector( '.hub61-card-foot' ), res.data.message, true );
@@ -78,24 +150,27 @@
 			} else {
 				btn.classList.remove( 'is-busy' );
 				btn.disabled = false;
-				btn.textContent = act === 'activate' ? 'Ativar' : 'Instalar';
+				btn.textContent = labelMap[ act ];
 				message( foot, ( res && res.data && res.data.message ) || i18n.error || 'Erro.', false );
 			}
 		} ).catch( function () {
 			btn.classList.remove( 'is-busy' );
 			btn.disabled = false;
-			btn.textContent = act === 'activate' ? 'Ativar' : 'Instalar';
+			btn.textContent = labelMap[ act ];
 			message( foot, i18n.error || 'Erro.', false );
 		} );
 	}
 
 	document.addEventListener( 'click', function ( e ) {
-		var btn = e.target.closest( '.hub61-do' );
+		var btn = e.target.closest( '.hub61-do, .hub61-update' );
 		if ( btn ) {
 			e.preventDefault();
 			handleAction( btn );
 		}
 	} );
+
+	// Busca versões e disponibilidade de atualização assim que o painel carrega.
+	loadVersions();
 
 	// Envio de ideia → monta um e-mail para a 61 Labs.
 	var ideaForm = document.getElementById( 'hub61-idea-form' );
