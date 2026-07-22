@@ -1,0 +1,188 @@
+/* Hub 61 Labs — painel administrativo
+ * Identidade 61 Labs sobre superfície clara, harmônica com o wp-admin.
+ * Interativos em "ink" (quase-preto) com texto branco; "signal" lime como
+ * acento da marca. Sem dependências além das fontes carregadas no admin.
+ * -------------------------------------------------------------------- */
+
+.hub61-wrap {
+	--h-card:       #ffffff;
+	--h-card-2:     #f1f3f6;
+	--h-line:       #d9dde4;
+	--h-text:       #16202b;
+	--h-muted:      #556070;
+	--h-ink:        #0f131b;
+	--h-ink-d:      #0a0c10;
+	--h-signal:     #acea4e;
+	--h-signal-d:   #9bd93c;
+	--h-signal-ink: #0a0c10;
+	--h-cyan:       #56d4cd;
+	--h-link:       #0b7a74;
+	--h-focus:      #0b7a74;
+	--h-green:      #16a34a;
+	--h-green-bg:   rgba(22,163,74,.10);
+	--h-green-bd:   rgba(22,163,74,.28);
+	--h-amber-bg:   rgba(217,119,6,.10);
+	--h-amber-bd:   rgba(217,119,6,.30);
+	--h-amber-tx:   #92600a;
+	--h-shadow:     0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
+	--h-shadow-md:  0 6px 22px rgba(0,0,0,.09), 0 2px 6px rgba(0,0,0,.05);
+	--h-r:          14px;
+	font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	color: var(--h-text);
+	margin-right: 20px;
+}
+.hub61-wrap * { box-sizing: border-box; }
+
+/* ── Header ────────────────────────────────────────────────────────── */
+.hub61-header {
+	display: flex; align-items: center; justify-content: space-between; gap: 16px;
+	padding: 24px 26px; margin: 16px 0 0;
+	background: var(--h-ink);
+	background-image: radial-gradient(120% 140% at 100% 0%, rgba(172,234,78,.16), transparent 55%);
+	border: 1px solid var(--h-ink-d);
+	border-radius: 16px;
+	box-shadow: var(--h-shadow-md);
+	color: #fff;
+}
+.hub61-brand { display: flex; align-items: center; gap: 16px; }
+.hub61-logo {
+	color: var(--h-signal); background: rgba(255,255,255,.06);
+	width: 52px; height: 52px; border-radius: 13px;
+	display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+	border: 1px solid rgba(255,255,255,.08);
+}
+.hub61-logo svg { width: 34px; height: 34px; }
+.hub61-brand h1 {
+	font-family: 'Space Grotesk', -apple-system, sans-serif;
+	font-size: 24px; font-weight: 700; margin: 0; color: #fff; line-height: 1.1;
+	padding: 0;
+}
+.hub61-brand p { margin: 5px 0 0; color: rgba(255,255,255,.72); font-size: 13.5px; max-width: 52ch; }
+.hub61-actions { display: flex; gap: 10px; flex-shrink: 0; }
+
+/* ── Notice ────────────────────────────────────────────────────────── */
+.hub61-notice {
+	margin: 18px 0 0; padding: 12px 16px; border-radius: 12px; font-size: 13.5px;
+	border: 1px solid transparent;
+}
+.hub61-notice-warn { background: var(--h-amber-bg); border-color: var(--h-amber-bd); color: var(--h-amber-tx); }
+
+/* ── Seções ────────────────────────────────────────────────────────── */
+.hub61-section { margin: 26px 0 0; }
+.hub61-section-head h2 {
+	font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700;
+	margin: 0; color: var(--h-text); padding: 0;
+}
+.hub61-section-head p { margin: 4px 0 0; color: var(--h-muted); font-size: 13.5px; }
+
+/* ── Grade de plugins ──────────────────────────────────────────────── */
+.hub61-grid {
+	display: grid; gap: 18px; margin-top: 18px;
+	grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.hub61-card {
+	background: var(--h-card); border: 1px solid var(--h-line); border-radius: var(--h-r);
+	padding: 20px; box-shadow: var(--h-shadow);
+	display: flex; flex-direction: column;
+	transition: box-shadow .16s, transform .16s, border-color .16s;
+}
+.hub61-card:hover { box-shadow: var(--h-shadow-md); transform: translateY(-2px); border-color: #c7ccd6; }
+.hub61-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.hub61-card-icon {
+	width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
+	display: inline-flex; align-items: center; justify-content: center;
+	background: var(--h-ink); color: var(--h-signal);
+}
+.hub61-card-icon svg { width: 26px; height: 26px; }
+.hub61-chip {
+	font-size: 11.5px; font-weight: 600; color: var(--h-muted);
+	background: var(--h-card-2); border: 1px solid var(--h-line);
+	padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+}
+.hub61-card-title {
+	font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 700;
+	margin: 0; color: var(--h-text); line-height: 1.2;
+}
+.hub61-card-tagline { margin: 3px 0 0; font-size: 12.5px; font-weight: 600; color: var(--h-link); }
+.hub61-card-desc { margin: 10px 0 0; font-size: 13px; line-height: 1.5; color: var(--h-muted); flex: 1; }
+.hub61-card-foot {
+	display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+	margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--h-line);
+}
+
+/* ── Botões ────────────────────────────────────────────────────────── */
+.hub61-btn {
+	display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+	font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600;
+	padding: 9px 16px; border-radius: 10px; border: 1px solid transparent;
+	text-decoration: none; line-height: 1; transition: background .14s, color .14s, border-color .14s, opacity .14s;
+	white-space: nowrap;
+}
+.hub61-btn:focus-visible { outline: 2px solid var(--h-focus); outline-offset: 2px; }
+.hub61-btn-primary { background: var(--h-ink); color: #fff; border-color: var(--h-ink); }
+.hub61-btn-primary:hover { background: var(--h-ink-d); color: #fff; }
+.hub61-btn-dark { background: var(--h-ink); color: #fff; border-color: var(--h-ink); }
+.hub61-btn-dark:hover { background: var(--h-ink-d); color: #fff; }
+.hub61-btn-ghost { background: transparent; color: var(--h-text); border-color: var(--h-line); }
+.hub61-header .hub61-btn-ghost { color: #fff; border-color: rgba(255,255,255,.24); background: rgba(255,255,255,.04); }
+.hub61-header .hub61-btn-ghost:hover { background: rgba(255,255,255,.12); color: #fff; }
+.hub61-btn-ghost:hover { background: var(--h-card-2); color: var(--h-text); border-color: #c7ccd6; }
+.hub61-btn[disabled], .hub61-btn.is-busy { opacity: .6; cursor: default; pointer-events: none; }
+.hub61-btn.is-busy::before {
+	content: ''; width: 13px; height: 13px; border-radius: 50%;
+	border: 2px solid currentColor; border-right-color: transparent;
+	display: inline-block; animation: hub61-spin .7s linear infinite;
+}
+@keyframes hub61-spin { to { transform: rotate(360deg); } }
+
+/* ── Status ────────────────────────────────────────────────────────── */
+.hub61-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; }
+.hub61-status-active { color: var(--h-green); }
+.hub61-status-active span { animation: hub61-pulse 2s infinite; }
+.hub61-status-muted {
+	color: var(--h-muted); background: var(--h-card-2);
+	border: 1px solid var(--h-line); padding: 6px 12px; border-radius: 999px;
+}
+@keyframes hub61-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.hub61-msg { font-size: 12.5px; font-weight: 500; width: 100%; margin: 0; }
+.hub61-msg-ok { color: var(--h-green); }
+.hub61-msg-err { color: #dc2626; }
+
+/* ── Painéis: ideia + suporte ──────────────────────────────────────── */
+.hub61-two { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.hub61-panel {
+	background: var(--h-card); border: 1px solid var(--h-line); border-radius: var(--h-r);
+	padding: 24px; box-shadow: var(--h-shadow); display: flex; flex-direction: column;
+}
+.hub61-panel h2 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; margin: 14px 0 0; padding: 0; }
+.hub61-panel p { margin: 6px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--h-muted); }
+.hub61-panel-icon {
+	width: 44px; height: 44px; border-radius: 12px;
+	display: inline-flex; align-items: center; justify-content: center;
+}
+.hub61-panel-icon svg { width: 24px; height: 24px; }
+.hub61-panel-idea .hub61-panel-icon { background: var(--h-signal); color: var(--h-signal-ink); }
+.hub61-panel-support .hub61-panel-icon { background: var(--h-ink); color: var(--h-signal); }
+.hub61-idea-form { margin-top: 16px; display: flex; flex-direction: column; gap: 12px; }
+.hub61-idea-form textarea {
+	width: 100%; resize: vertical; min-height: 92px;
+	background: var(--h-card-2); border: 1px solid var(--h-line); border-radius: 10px;
+	padding: 12px 14px; font-family: inherit; font-size: 13.5px; color: var(--h-text);
+	transition: border-color .12s, background .12s;
+}
+.hub61-idea-form textarea:focus { outline: none; border-color: var(--h-focus); background: #fff; }
+.hub61-idea-form .hub61-btn { align-self: flex-start; }
+.hub61-panel-support .hub61-btn { align-self: flex-start; margin-top: 16px; }
+
+/* ── Rodapé ────────────────────────────────────────────────────────── */
+.hub61-footer {
+	display: flex; align-items: center; gap: 10px; justify-content: center;
+	margin: 30px 0 10px; color: var(--h-muted); font-size: 12.5px;
+}
+.hub61-footer-logo { color: var(--h-ink); display: inline-flex; }
+.hub61-footer-logo svg { width: 22px; height: 16px; }
+
+@media (max-width: 782px) {
+	.hub61-header { flex-direction: column; align-items: flex-start; }
+	.hub61-wrap { margin-right: 0; }
+}
