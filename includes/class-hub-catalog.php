@@ -33,6 +33,7 @@ class Hub61_Catalog {
 				'repo'        => 'meiaumlabs/cluster-engine',
 				'plugin_file' => 'cluster-engine-61labs/cluster-engine.php',
 				'admin_url'   => 'admin.php?page=cluster-engine',
+				'type'        => 'tool',
 			),
 			array(
 				'slug'        => 'orbit-track',
@@ -44,6 +45,7 @@ class Hub61_Catalog {
 				'repo'        => 'meiaumlabs/orbit-track',
 				'plugin_file' => 'orbit-track/orbit-track.php',
 				'admin_url'   => 'admin.php?page=orbit-track',
+				'type'        => 'tool',
 			),
 			array(
 				'slug'        => 'digital-metrics',
@@ -55,6 +57,7 @@ class Hub61_Catalog {
 				'repo'        => 'meiaumlabs/digital-metrics',
 				'plugin_file' => 'digital-metrics/digital-metrics.php',
 				'admin_url'   => 'admin.php?page=digital-metrics',
+				'type'        => 'tool',
 			),
 			array(
 				'slug'        => 'smartlink-qr',
@@ -66,17 +69,7 @@ class Hub61_Catalog {
 				'repo'        => 'meiaumlabs/smartlink-qr',
 				'plugin_file' => 'smartlink-qr/smartlink-qr.php',
 				'admin_url'   => 'admin.php?page=smartlink-qr',
-			),
-			array(
-				'slug'        => 'author-seo-elementor',
-				'name'        => 'Author SEO',
-				'tagline'     => 'Bloco de Autor & Schema p/ Elementor',
-				'description' => 'Addon de SEO para Elementor Pro focado em autoria: widget de bloco de autor estilizável, Schema.org Person (JSON-LD) e gestão de perfis de autor com sameAs.',
-				'category'    => 'SEO & Conteúdo',
-				'icon'        => 'author',
-				'repo'        => 'meiaumlabs/author-seo-elementor',
-				'plugin_file' => 'author-seo-elementor/author-seo-elementor.php',
-				'admin_url'   => 'admin.php?page=author-seo',
+				'type'        => 'tool',
 			),
 			array(
 				'slug'        => 'diario-da-clinica',
@@ -88,8 +81,45 @@ class Hub61_Catalog {
 				'repo'        => 'meiaumlabs/diario-da-clinica',
 				'plugin_file' => 'diario-da-clinica/diario-da-clinica.php',
 				'admin_url'   => 'admin.php?page=diario-da-clinica',
+				'type'        => 'tool',
+			),
+			array(
+				'slug'        => 'author-seo-elementor',
+				'name'        => 'Author SEO',
+				'tagline'     => 'Bloco de Autor & Schema p/ Elementor',
+				'description' => 'Addon de SEO para Elementor Pro focado em autoria: widget de bloco de autor estilizável, Schema.org Person (JSON-LD) e gestão de perfis de autor com sameAs.',
+				'category'    => 'Elementor',
+				'icon'        => 'author',
+				'repo'        => 'meiaumlabs/author-seo-elementor',
+				'plugin_file' => 'author-seo-elementor/author-seo-elementor.php',
+				'admin_url'   => 'admin.php?page=author-seo',
+				'type'        => 'addon',
+			),
+			array(
+				'slug'        => 'catedral-elements',
+				'name'        => 'Catedral Elements',
+				'tagline'     => 'Slide Carrossel & Widgets p/ Elementor',
+				'description' => 'Addon de widgets premium para o Elementor. Primeiro widget: Slide Carrossel com scroll horizontal, autoplay, menu de navegação sincronizado e conteúdo boxed/full — para apresentações imobiliárias de alto padrão.',
+				'category'    => 'Elementor',
+				'icon'        => 'slides',
+				'repo'        => 'meiaumlabs/catedral-elements-for-elementor',
+				'plugin_file' => 'catedral-elements-for-elementor/catedral-elements-for-elementor.php',
+				'admin_url'   => '',
+				'type'        => 'addon',
 			),
 		);
+	}
+
+	/**
+	 * Filtra o catálogo por tipo.
+	 *
+	 * @param string $type Tipo do item: 'tool' ou 'addon'.
+	 * @return array<int,array<string,string>>
+	 */
+	public static function by_type( $type ) {
+		return array_values( array_filter( self::all(), function ( $item ) use ( $type ) {
+			return isset( $item['type'] ) && $item['type'] === $type;
+		} ) );
 	}
 
 	/**

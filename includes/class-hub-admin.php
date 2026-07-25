@@ -67,7 +67,8 @@ class Hub61_Admin {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
-		$catalog   = Hub61_Catalog::all();
+		$tools       = Hub61_Catalog::by_type( 'tool' );
+		$addons      = Hub61_Catalog::by_type( 'addon' );
 		$can_install = current_user_can( 'install_plugins' );
 		?>
 		<div class="wrap hub61-wrap">
@@ -104,36 +105,26 @@ class Hub61_Admin {
 				</div>
 
 				<div class="hub61-grid">
-					<?php foreach ( $catalog as $item ) :
-						$state     = Hub61_Installer::state( $item );
-						$installed = Hub61_Installer::installed_version( $item );
-						?>
-						<article class="hub61-card" data-slug="<?php echo esc_attr( $item['slug'] ); ?>" data-file="<?php echo esc_attr( $item['plugin_file'] ); ?>" data-admin="<?php echo esc_url( admin_url( $item['admin_url'] ) ); ?>" data-installed="<?php echo esc_attr( $installed ); ?>">
-							<div class="hub61-card-top">
-								<span class="hub61-card-icon" aria-hidden="true"><?php echo self::plugin_icon( $item['icon'] ); // phpcs:ignore ?></span>
-								<span class="hub61-chip"><?php echo esc_html( $item['category'] ); ?></span>
-							</div>
-							<h3 class="hub61-card-title"><?php echo esc_html( $item['name'] ); ?></h3>
-							<p class="hub61-card-tagline"><?php echo esc_html( $item['tagline'] ); ?></p>
-							<p class="hub61-card-desc"><?php echo esc_html( $item['description'] ); ?></p>
-							<div class="hub61-card-meta">
-								<span class="hub61-ver hub61-ver-installed"<?php echo '' === $installed ? ' hidden' : ''; ?>>
-									<?php esc_html_e( 'Instalada:', 'hub-61labs' ); ?>
-									<b class="hub61-ver-installed-num">v<?php echo esc_html( $installed ); ?></b>
-								</span>
-								<span class="hub61-ver hub61-ver-latest">
-									<?php esc_html_e( 'Última:', 'hub-61labs' ); ?>
-									<b class="hub61-ver-latest-num">…</b>
-								</span>
-								<span class="hub61-ver-badge" hidden></span>
-							</div>
-							<div class="hub61-card-foot" data-state="<?php echo esc_attr( $state ); ?>">
-								<?php self::render_action( $item, $state, $can_install ); ?>
-							</div>
-						</article>
-					<?php endforeach; ?>
+					<?php foreach ( $tools as $item ) :
+						self::render_card( $item, $can_install );
+					endforeach; ?>
 				</div>
 			</section>
+
+			<?php if ( ! empty( $addons ) ) : ?>
+			<section class="hub61-section">
+				<div class="hub61-section-head">
+					<h2><?php esc_html_e( 'Addons para Elementor', 'hub-61labs' ); ?></h2>
+					<p><?php esc_html_e( 'Widgets que estendem o Elementor com componentes premium da 61 Labs.', 'hub-61labs' ); ?></p>
+				</div>
+
+				<div class="hub61-grid">
+					<?php foreach ( $addons as $item ) :
+						self::render_card( $item, $can_install );
+					endforeach; ?>
+				</div>
+			</section>
+			<?php endif; ?>
 
 			<section class="hub61-section hub61-two">
 				<div class="hub61-panel hub61-panel-idea">
@@ -195,11 +186,13 @@ class Hub61_Admin {
 				'<span class="hub61-status hub61-status-active"><span aria-hidden="true">●</span> %s</span>',
 				esc_html__( 'Ativo', 'hub-61labs' )
 			);
-			printf(
-				'<a class="hub61-btn hub61-btn-ghost hub61-open" href="%s">%s</a>',
-				esc_url( admin_url( $item['admin_url'] ) ),
-				esc_html__( 'Abrir', 'hub-61labs' )
-			);
+			if ( '' !== $item['admin_url'] ) {
+				printf(
+					'<a class="hub61-btn hub61-btn-ghost hub61-open" href="%s">%s</a>',
+					esc_url( admin_url( $item['admin_url'] ) ),
+					esc_html__( 'Abrir', 'hub-61labs' )
+				);
+			}
 			return;
 		}
 		if ( ! $can_install ) {
@@ -225,6 +218,43 @@ class Hub61_Admin {
 	}
 
 	/**
+	 * Renderiza o markup de um card do catálogo.
+	 *
+	 * @param array<string,string> $item        Item do catálogo.
+	 * @param bool                 $can_install Usuário pode instalar plugins.
+	 */
+	private static function render_card( $item, $can_install ) {
+		$state       = Hub61_Installer::state( $item );
+		$installed   = Hub61_Installer::installed_version( $item );
+		$admin_href  = '' !== $item['admin_url'] ? admin_url( $item['admin_url'] ) : '';
+		?>
+		<article class="hub61-card" data-slug="<?php echo esc_attr( $item['slug'] ); ?>" data-file="<?php echo esc_attr( $item['plugin_file'] ); ?>" data-admin="<?php echo esc_url( $admin_href ); ?>" data-installed="<?php echo esc_attr( $installed ); ?>">
+			<div class="hub61-card-top">
+				<span class="hub61-card-icon" aria-hidden="true"><?php echo self::plugin_icon( $item['icon'] ); // phpcs:ignore ?></span>
+				<span class="hub61-chip"><?php echo esc_html( $item['category'] ); ?></span>
+			</div>
+			<h3 class="hub61-card-title"><?php echo esc_html( $item['name'] ); ?></h3>
+			<p class="hub61-card-tagline"><?php echo esc_html( $item['tagline'] ); ?></p>
+			<p class="hub61-card-desc"><?php echo esc_html( $item['description'] ); ?></p>
+			<div class="hub61-card-meta">
+				<span class="hub61-ver hub61-ver-installed"<?php echo '' === $installed ? ' hidden' : ''; ?>>
+					<?php esc_html_e( 'Instalada:', 'hub-61labs' ); ?>
+					<b class="hub61-ver-installed-num">v<?php echo esc_html( $installed ); ?></b>
+				</span>
+				<span class="hub61-ver hub61-ver-latest">
+					<?php esc_html_e( 'Última:', 'hub-61labs' ); ?>
+					<b class="hub61-ver-latest-num">…</b>
+				</span>
+				<span class="hub61-ver-badge" hidden></span>
+			</div>
+			<div class="hub61-card-foot" data-state="<?php echo esc_attr( $state ); ?>">
+				<?php self::render_action( $item, $state, $can_install ); ?>
+			</div>
+		</article>
+		<?php
+	}
+
+	/**
 	 * Logo 61 Labs (ícone verde) inline.
 	 */
 	private static function logo_svg() {
@@ -244,6 +274,7 @@ class Hub61_Admin {
 			'qr'      => '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v0M17 21h4v-4M14 21h0"/>',
 			'author'  => '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
 			'clinic'  => '<path d="M12 5v14M5 12h14" stroke-width="2.4"/><rect x="3" y="3" width="18" height="18" rx="3"/>',
+			'slides'  => '<rect x="6" y="4" width="12" height="16" rx="2"/><rect x="2" y="7" width="5" height="10" rx="1.5"/><rect x="17" y="7" width="5" height="10" rx="1.5"/><path d="M4 12h1M19 12h1"/>',
 		);
 		$body = isset( $icons[ $key ] ) ? $icons[ $key ] : $icons['orbit'];
 		return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' . $body . '</svg>';
