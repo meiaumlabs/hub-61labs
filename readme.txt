@@ -4,7 +4,7 @@ Tags: 61labs, plugins, hub, instalador, marketplace
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.4.0
+Stable tag: 1.5.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,6 +48,14 @@ Não. Os plugins instalados pelo Hub são independentes e continuam funcionando 
 Instalar e ativar plugins exige a permissão `install_plugins` (normalmente administradores).
 
 == Changelog ==
+
+= 1.5.0 =
+* Nova página **Relatórios de Performance**: gera um PDF com a performance dos plugins 61 Labs e envia por e-mail e WhatsApp.
+* Conexão com **Evolution API** (WhatsApp) nas configurações — URL, API key e instância, com botão de testar conexão.
+* Envio **sob demanda** ("Enviar relatório agora") e **agendado** (semanal/mensal via cron).
+* Configuração por usuário: e-mail e WhatsApp de recebimento; cópia sempre enviada ao WhatsApp do administrador da 61 Labs.
+* Contrato `hub61_report_sections` para cada plugin fornecer seus dados ao relatório (Orbit Track já integrado com Fontes de Tráfego).
+* PDF gerado no próprio site (Dompdf embutido) — sem depender de serviços externos.
 
 = 1.4.0 =
 * Segurança contra quebra do site ao instalar/atualizar Extra Plugins:

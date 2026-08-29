@@ -3,7 +3,7 @@
  * Plugin Name:       Hub 61 Labs
  * Plugin URI:        https://61labs.com.br
  * Description:       Central de plugins da 61 Labs. Descubra e instale todas as ferramentas da 61 Labs em um só lugar, envie ideias e fale com o suporte — direto do painel do WordPress.
- * Version:           1.4.0
+ * Version:           1.5.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            61 Labs
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'HUB61_VERSION', '1.4.0' );
+define( 'HUB61_VERSION', '1.5.0' );
 define( 'HUB61_FILE', __FILE__ );
 define( 'HUB61_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HUB61_URL', plugin_dir_url( __FILE__ ) );
@@ -48,7 +48,18 @@ $hub61_update_checker->getVcsApi()->enableReleaseAssets();
 require_once HUB61_DIR . 'includes/class-hub-catalog.php';
 require_once HUB61_DIR . 'includes/class-hub-extra.php';
 require_once HUB61_DIR . 'includes/class-hub-installer.php';
+require_once HUB61_DIR . 'includes/class-hub-evolution.php';
+require_once HUB61_DIR . 'includes/class-hub-report.php';
 require_once HUB61_DIR . 'includes/class-hub-admin.php';
 
 Hub61_Installer::init();
+Hub61_Report::init();
 Hub61_Admin::init();
+
+// Limpa o agendamento do relatório ao desativar o plugin.
+register_deactivation_hook( __FILE__, function () {
+	$ts = wp_next_scheduled( Hub61_Report::CRON_HOOK );
+	if ( $ts ) {
+		wp_unschedule_event( $ts, Hub61_Report::CRON_HOOK );
+	}
+} );

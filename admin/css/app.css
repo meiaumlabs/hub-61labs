@@ -217,3 +217,16 @@
 }
 .hub61-ver-select:focus-visible { outline: 2px solid var(--h-focus); outline-offset: 2px; }
 .hub61-card-extra .hub61-card-foot { margin-top: 14px; }
+
+/* ── Página de Relatórios ──────────────────────────────────────────── */
+.hub61-notice-ok { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; padding: 10px 14px; border-radius: 10px; margin: 12px 0; }
+.hub61-reports .hub61-panel { padding: 18px 20px; }
+.hub61-reports .hub61-panel label { font-size: 13px; font-weight: 600; color: var(--h-text); }
+.hub61-reports .hub61-panel input[type="url"],
+.hub61-reports .hub61-panel input[type="text"],
+.hub61-reports .hub61-panel input[type="email"] { font-family: 'Inter', sans-serif; padding: 8px 10px; border: 1px solid var(--h-line); border-radius: 8px; }
+.hub61-report-plugins { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 16px; }
+.hub61-report-plugin { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.hub61-report-plugin.is-off { opacity: .6; }
+.hub61-report-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+.hub61-reports select { font-family: 'Inter', sans-serif; padding: 7px 10px; border: 1px solid var(--h-line); border-radius: 8px; background: #fff; }
