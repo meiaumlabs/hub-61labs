@@ -41,15 +41,155 @@ class Hub61_Installer {
 	}
 
 	/**
-	 * Instala um plugin a partir de um ZIP (URL). Não ativa.
+	 * Pasta raiz de um plugin no disco (primeiro segmento do plugin_file).
 	 *
-	 * @param string $zip URL do ZIP.
+	 * @param string $plugin_file basename (pasta/arquivo.php).
+	 * @return string Caminho absoluto da pasta, ou '' se for plugin de arquivo único.
+	 */
+	private static function plugin_root_dir( $plugin_file ) {
+		if ( false === strpos( $plugin_file, '/' ) ) {
+			return '';
+		}
+		$slug_dir = strtok( $plugin_file, '/' );
+		return WP_PLUGIN_DIR . '/' . $slug_dir;
+	}
+
+	/**
+	 * Baixa o pacote para um arquivo temporário local.
+	 *
+	 * @param string $url URL do ZIP.
+	 * @return string|WP_Error Caminho do arquivo local ou erro.
+	 */
+	private static function download_package( $url ) {
+		if ( ! function_exists( 'download_url' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		return download_url( $url, 60 );
+	}
+
+	/**
+	 * Lê os cabeçalhos do arquivo principal do plugin de dentro do ZIP (sem extrair).
+	 *
+	 * @param string $zip_file    Arquivo ZIP local.
+	 * @param string $plugin_file Caminho interno pasta/arquivo.php.
+	 * @return array<string,string> Cabeçalhos relevantes (podem vir vazios).
+	 */
+	private static function read_zip_plugin_headers( $zip_file, $plugin_file ) {
+		$out = array( 'RequiresWP' => '', 'RequiresPHP' => '', 'RequiresPlugins' => '', 'Version' => '', 'Name' => '' );
+		if ( ! class_exists( 'ZipArchive' ) || '' === $plugin_file ) {
+			return $out;
+		}
+		$za = new ZipArchive();
+		if ( true !== $za->open( $zip_file ) ) {
+			return $out;
+		}
+		$content = $za->getFromName( $plugin_file );
+		$za->close();
+		if ( false === $content ) {
+			return $out;
+		}
+		// Cabeçalhos só ficam no topo do arquivo.
+		$content = substr( $content, 0, 8192 );
+		$get = function ( $key ) use ( $content ) {
+			if ( preg_match( '/^[ \t\/*#@]*' . preg_quote( $key, '/' ) . '\s*:\s*(.+)$/mi', $content, $m ) ) {
+				return trim( $m[1] );
+			}
+			return '';
+		};
+		$out['RequiresWP']      = $get( 'Requires at least' );
+		$out['RequiresPHP']     = $get( 'Requires PHP' );
+		$out['RequiresPlugins'] = $get( 'Requires Plugins' );
+		$out['Version']         = $get( 'Version' );
+		$out['Name']            = $get( 'Plugin Name' );
+		return $out;
+	}
+
+	/**
+	 * Pré-checagem de compatibilidade a partir dos cabeçalhos do ZIP.
+	 * Retorna uma lista de motivos de bloqueio (vazia = ok).
+	 *
+	 * @param array<string,string> $h Cabeçalhos lidos do ZIP.
+	 * @return array<int,string>
+	 */
+	private static function preflight( $h ) {
+		$errs = array();
+		if ( ! empty( $h['RequiresPHP'] ) && version_compare( PHP_VERSION, $h['RequiresPHP'], '<' ) ) {
+			$errs[] = sprintf(
+				/* translators: 1: versão exigida, 2: versão atual */
+				__( 'Requer PHP %1$s (este site tem %2$s).', 'hub-61labs' ),
+				$h['RequiresPHP'],
+				PHP_VERSION
+			);
+		}
+		if ( ! empty( $h['RequiresWP'] ) ) {
+			$wp = get_bloginfo( 'version' );
+			if ( version_compare( $wp, $h['RequiresWP'], '<' ) ) {
+				$errs[] = sprintf(
+					/* translators: 1: versão exigida, 2: versão atual */
+					__( 'Requer WordPress %1$s (este site tem %2$s).', 'hub-61labs' ),
+					$h['RequiresWP'],
+					$wp
+				);
+			}
+		}
+		return $errs;
+	}
+
+	/**
+	 * Verifica (via loopback) se o site passou a responder com erro crítico.
+	 * Conservador: em caso de dúvida (não conseguiu checar) retorna false — não
+	 * dispara rollback à toa.
+	 *
+	 * @return bool true se detectou erro crítico/fatal.
+	 */
+	private static function site_has_fatal() {
+		$resp = wp_remote_get( add_query_arg( 'hub61_health', time(), home_url( '/' ) ), array(
+			'timeout'     => 15,
+			'sslverify'   => false,
+			'redirection' => 1,
+			'headers'     => array( 'Cache-Control' => 'no-cache' ),
+		) );
+		if ( is_wp_error( $resp ) ) {
+			return false;
+		}
+		$code = (int) wp_remote_retrieve_response_code( $resp );
+		if ( $code >= 500 ) {
+			return true;
+		}
+		$body = (string) wp_remote_retrieve_body( $resp );
+		if ( '' !== $body && (
+			false !== stripos( $body, 'There has been a critical error' )
+			|| false !== stripos( $body, 'erro crítico' )
+		) ) {
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Instala um plugin a partir de um ZIP (URL), com pré-checagem. Não ativa.
+	 *
+	 * @param string $zip         URL do ZIP.
+	 * @param string $plugin_file Caminho interno pasta/arquivo.php (para pré-checagem).
 	 * @return true|WP_Error
 	 */
-	private static function install_from_zip( $zip ) {
+	private static function install_from_zip( $zip, $plugin_file = '' ) {
 		self::ensure_upgrader();
+
+		$local = self::download_package( $zip );
+		if ( is_wp_error( $local ) ) {
+			return $local;
+		}
+
+		$headers = self::read_zip_plugin_headers( $local, $plugin_file );
+		$block   = self::preflight( $headers );
+		if ( ! empty( $block ) ) {
+			@unlink( $local ); // phpcs:ignore
+			return new WP_Error( 'hub61_preflight', implode( ' ', $block ) );
+		}
+
 		$upgrader  = new Plugin_Upgrader( new Hub61_Silent_Skin() );
-		$installed = $upgrader->install( $zip );
+		$installed = $upgrader->install( $local ); // arquivo local: o upgrader remove o temp ao final.
 		if ( is_wp_error( $installed ) ) {
 			return $installed;
 		}
@@ -63,19 +203,59 @@ class Hub61_Installer {
 	}
 
 	/**
-	 * Atualiza (sobrescreve) um plugin instalado a partir de um ZIP (URL).
-	 * Reativa o plugin se ele estava ativo antes.
+	 * Atualiza (sobrescreve) um plugin instalado a partir de um ZIP (URL), com rede de
+	 * segurança: pré-checagem, backup da versão atual, verificação de saúde do site e
+	 * rollback automático se a nova versão quebrar o site (erro crítico).
 	 *
 	 * @param string $zip         URL do ZIP.
 	 * @param string $plugin_file basename (pasta/arquivo.php) do plugin.
-	 * @return bool|WP_Error true/false = estava ativo antes; WP_Error em falha.
+	 * @return bool|WP_Error true/false = estava ativo antes; WP_Error em falha/rollback.
 	 */
 	private static function update_from_zip( $zip, $plugin_file ) {
 		self::ensure_upgrader();
+		global $wp_filesystem;
+		if ( empty( $wp_filesystem ) ) {
+			WP_Filesystem();
+		}
+
 		$was_active = is_plugin_active( $plugin_file );
-		$upgrader   = new Plugin_Upgrader( new Hub61_Silent_Skin() );
-		$result     = $upgrader->run( array(
-			'package'                     => $zip,
+
+		// Download + pré-checagem antes de tocar no disco.
+		$local = self::download_package( $zip );
+		if ( is_wp_error( $local ) ) {
+			return $local;
+		}
+		$headers = self::read_zip_plugin_headers( $local, $plugin_file );
+		$block   = self::preflight( $headers );
+		if ( ! empty( $block ) ) {
+			@unlink( $local ); // phpcs:ignore
+			return new WP_Error( 'hub61_preflight', implode( ' ', $block ) );
+		}
+
+		// Backup da pasta atual (para rollback).
+		$dir     = self::plugin_root_dir( $plugin_file );
+		$backup  = '';
+		$can_fs  = ! empty( $wp_filesystem );
+		if ( $can_fs && '' !== $dir && $wp_filesystem->is_dir( $dir ) ) {
+			$upgrade_dir = WP_CONTENT_DIR . '/upgrade';
+			if ( ! $wp_filesystem->is_dir( $upgrade_dir ) ) {
+				$wp_filesystem->mkdir( $upgrade_dir, FS_CHMOD_DIR );
+			}
+			$backup = $upgrade_dir . '/hub61-bak-' . md5( $plugin_file ) . '-' . time();
+			if ( $wp_filesystem->mkdir( $backup, FS_CHMOD_DIR ) ) {
+				$copied = copy_dir( $dir, $backup );
+				if ( is_wp_error( $copied ) ) {
+					$wp_filesystem->delete( $backup, true );
+					$backup = '';
+				}
+			} else {
+				$backup = '';
+			}
+		}
+
+		$upgrader = new Plugin_Upgrader( new Hub61_Silent_Skin() );
+		$result   = $upgrader->run( array(
+			'package'                     => $local,
 			'destination'                 => WP_PLUGIN_DIR,
 			'clear_destination'           => true,
 			'clear_working'               => true,
@@ -86,17 +266,47 @@ class Hub61_Installer {
 				'plugin' => $plugin_file,
 			),
 		) );
-		if ( is_wp_error( $result ) ) {
-			return $result;
+
+		$failed = is_wp_error( $result ) || false === $result || null === $result;
+
+		if ( ! $failed && $was_active ) {
+			activate_plugin( $plugin_file );
 		}
-		if ( false === $result || null === $result ) {
+
+		// Verificação de saúde só faz sentido se o update aparentou sucesso.
+		$fatal = ( ! $failed ) ? self::site_has_fatal() : false;
+
+		if ( $failed || $fatal ) {
+			// Rollback: restaura a pasta do backup.
+			if ( '' !== $backup && '' !== $dir ) {
+				$wp_filesystem->delete( $dir, true );
+				$wp_filesystem->mkdir( $dir, FS_CHMOD_DIR );
+				copy_dir( $backup, $dir );
+				if ( $was_active ) {
+					activate_plugin( $plugin_file );
+				}
+			}
+			if ( '' !== $backup ) {
+				$wp_filesystem->delete( $backup, true );
+			}
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			if ( $fatal ) {
+				return new WP_Error( 'hub61_rollback', '' !== $backup
+					? __( 'A versão escolhida gerou um erro crítico no site e foi revertida para a versão anterior. Provável incompatibilidade com outro plugin (ex.: Elementor Pro exige uma versão do Elementor mais nova do que a escolhida).', 'hub-61labs' )
+					: __( 'A versão escolhida gerou um erro crítico no site. Não foi possível reverter automaticamente — reinstale a última versão pela lista.', 'hub-61labs' )
+				);
+			}
 			$errors = $upgrader->skin->get_errors();
 			return new WP_Error( 'hub61_update', is_wp_error( $errors ) && $errors->has_errors()
 				? $errors->get_error_message()
 				: __( 'Falha ao atualizar o plugin.', 'hub-61labs' ) );
 		}
-		if ( $was_active ) {
-			activate_plugin( $plugin_file );
+
+		// Sucesso: descarta o backup.
+		if ( '' !== $backup ) {
+			$wp_filesystem->delete( $backup, true );
 		}
 		return $was_active;
 	}
@@ -154,7 +364,7 @@ class Hub61_Installer {
 			wp_send_json_error( array( 'message' => __( 'Versão indisponível.', 'hub-61labs' ) ) );
 		}
 
-		$installed = self::install_from_zip( $zip );
+		$installed = self::install_from_zip( $zip, $item['plugin_file'] );
 		if ( is_wp_error( $installed ) ) {
 			wp_send_json_error( array( 'message' => $installed->get_error_message() ) );
 		}
@@ -164,6 +374,20 @@ class Hub61_Installer {
 		}
 		$activated = activate_plugin( $item['plugin_file'] );
 		$state     = is_wp_error( $activated ) ? 'inactive' : 'active';
+
+		// Rede de segurança: se ativar quebrou o site (erro crítico), desativa e remove.
+		if ( 'active' === $state && self::site_has_fatal() ) {
+			deactivate_plugins( $item['plugin_file'], true );
+			if ( self::site_has_fatal() ) {
+				// Ainda quebrado: remove o plugin recém-instalado para restaurar o site.
+				if ( ! function_exists( 'delete_plugins' ) ) {
+					require_once ABSPATH . 'wp-admin/includes/plugin.php';
+				}
+				delete_plugins( array( $item['plugin_file'] ) );
+			}
+			wp_send_json_error( array( 'message' => __( 'A versão instalada gerou um erro crítico no site e foi revertida. Tente a última versão, ou verifique se há um plugin dependente (ex.: Elementor Pro exige uma versão mais nova do Elementor).', 'hub-61labs' ) ) );
+		}
+
 		wp_send_json_success( array(
 			'state'     => $state,
 			'installed' => self::installed_version( $item ),

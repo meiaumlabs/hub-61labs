@@ -4,7 +4,7 @@ Tags: 61labs, plugins, hub, instalador, marketplace
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.4.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,6 +48,14 @@ Não. Os plugins instalados pelo Hub são independentes e continuam funcionando 
 Instalar e ativar plugins exige a permissão `install_plugins` (normalmente administradores).
 
 == Changelog ==
+
+= 1.4.0 =
+* Segurança contra quebra do site ao instalar/atualizar Extra Plugins:
+  * **Pré-checagem** de `Requires PHP` e `Requires at least` (WordPress) antes de tocar no disco — bloqueia com mensagem clara se o site não atende.
+  * **Backup + rollback automático** no update: se a nova versão gerar erro crítico, o Hub reverte para a versão anterior sozinho.
+  * **Verificação de saúde do site** (loopback) após instalar/atualizar; no install, desativa e remove a versão que quebrar.
+  * **Aviso de downgrade** no seletor de versão (confirmação antes de baixar de versão).
+* Catálogo de Extra Plugins ampliado no repositório curado.
 
 = 1.3.0 =
 * Nova seção **Extra Plugins**: plugins extras (ex.: Elementor, Elementor Pro, JetEngine, Rank Math) liberados por acesso, lidos do repositório curado meiaumlabs/extra-plugins.

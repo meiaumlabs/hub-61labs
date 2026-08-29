@@ -196,6 +196,20 @@
 			payload.version = sel ? sel.value : '';
 		}
 
+		// Aviso de downgrade: baixar de versão pode quebrar o site (ex.: Elementor Pro).
+		if ( isExtra && act === 'extra-update' ) {
+			var instV = card.getAttribute( 'data-installed' ) || '';
+			if ( instV && payload.version && cmpVer( payload.version, instV ) < 0 ) {
+				if ( ! window.confirm(
+					'Você está baixando de v' + instV + ' para v' + payload.version + '.\n\n' +
+					'Baixar de versão pode quebrar o site se outro plugin depender de uma versão mais nova ' +
+					'(ex.: Elementor Pro exige um Elementor recente). Se der erro crítico, o Hub reverte sozinho.\n\nContinuar?'
+				) ) {
+					return;
+				}
+			}
+		}
+
 		btn.classList.add( 'is-busy' );
 		btn.disabled = true;
 		btn.textContent = busyMap[ act ];
