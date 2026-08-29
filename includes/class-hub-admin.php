@@ -126,6 +126,24 @@ class Hub61_Admin {
 			</section>
 			<?php endif; ?>
 
+			<?php
+			$extras = Hub61_Extra::all();
+			if ( ! empty( $extras ) ) :
+			?>
+			<section class="hub61-section">
+				<div class="hub61-section-head">
+					<h2><?php esc_html_e( 'Extra Plugins', 'hub-61labs' ); ?></h2>
+					<p><?php esc_html_e( 'Plugins extras liberados para o seu acesso. Escolha a versão e instale ou atualize.', 'hub-61labs' ); ?></p>
+				</div>
+
+				<div class="hub61-grid">
+					<?php foreach ( $extras as $item ) :
+						self::render_extra_card( $item, $can_install );
+					endforeach; ?>
+				</div>
+			</section>
+			<?php endif; ?>
+
 			<section class="hub61-section hub61-two">
 				<div class="hub61-panel hub61-panel-idea">
 					<div class="hub61-panel-icon" aria-hidden="true">
@@ -255,6 +273,122 @@ class Hub61_Admin {
 	}
 
 	/**
+	 * Renderiza o card de um Extra Plugin (com seletor de versão + instalar/atualizar).
+	 *
+	 * @param array<string,mixed> $item        Item do manifest (com versions[]).
+	 * @param bool                $can_install Usuário pode instalar plugins.
+	 */
+	private static function render_extra_card( $item, $can_install ) {
+		$slug        = isset( $item['slug'] ) ? (string) $item['slug'] : '';
+		$plugin_file = isset( $item['plugin_file'] ) ? (string) $item['plugin_file'] : '';
+		$admin_url   = ! empty( $item['admin_url'] ) ? (string) $item['admin_url'] : '';
+		$icon        = isset( $item['icon'] ) ? (string) $item['icon'] : 'extra';
+		$versions    = ( ! empty( $item['versions'] ) && is_array( $item['versions'] ) ) ? $item['versions'] : array();
+		$latest      = isset( $item['latest'] ) ? (string) $item['latest'] : ( isset( $versions[0]['version'] ) ? (string) $versions[0]['version'] : '' );
+
+		$proxy = array( 'plugin_file' => $plugin_file );
+		$state       = '' !== $plugin_file ? Hub61_Installer::state( $proxy ) : 'not-installed';
+		$installed   = '' !== $plugin_file ? Hub61_Installer::installed_version( $proxy ) : '';
+		$admin_href  = '' !== $admin_url ? admin_url( $admin_url ) : '';
+		$has_update  = ( '' !== $installed && '' !== $latest && version_compare( $installed, $latest, '<' ) );
+		?>
+		<article class="hub61-card hub61-card-extra" data-extra="1" data-slug="<?php echo esc_attr( $slug ); ?>" data-file="<?php echo esc_attr( $plugin_file ); ?>" data-admin="<?php echo esc_url( $admin_href ); ?>" data-installed="<?php echo esc_attr( $installed ); ?>" data-latest="<?php echo esc_attr( $latest ); ?>">
+			<div class="hub61-card-top">
+				<span class="hub61-card-icon" aria-hidden="true"><?php echo self::plugin_icon( $icon ); // phpcs:ignore ?></span>
+				<span class="hub61-chip"><?php echo esc_html( isset( $item['category'] ) ? $item['category'] : __( 'Extra', 'hub-61labs' ) ); ?></span>
+			</div>
+			<h3 class="hub61-card-title"><?php echo esc_html( isset( $item['name'] ) ? $item['name'] : $slug ); ?></h3>
+			<p class="hub61-card-tagline"><?php echo esc_html( isset( $item['tagline'] ) ? $item['tagline'] : '' ); ?></p>
+			<p class="hub61-card-desc"><?php echo esc_html( isset( $item['description'] ) ? $item['description'] : '' ); ?></p>
+
+			<div class="hub61-card-meta">
+				<span class="hub61-ver hub61-ver-installed"<?php echo '' === $installed ? ' hidden' : ''; ?>>
+					<?php esc_html_e( 'Instalada:', 'hub-61labs' ); ?>
+					<b class="hub61-ver-installed-num">v<?php echo esc_html( $installed ); ?></b>
+				</span>
+				<span class="hub61-ver-badge"<?php echo $has_update ? '' : ' hidden'; ?>><?php esc_html_e( 'Atualização disponível', 'hub-61labs' ); ?></span>
+			</div>
+
+			<?php if ( $can_install && ! empty( $versions ) ) : ?>
+			<label class="hub61-verpick">
+				<span class="hub61-verpick-label"><?php esc_html_e( 'Versão', 'hub-61labs' ); ?></span>
+				<select class="hub61-ver-select">
+					<?php foreach ( $versions as $v ) :
+						$vn = isset( $v['version'] ) ? (string) $v['version'] : '';
+						if ( '' === $vn ) { continue; }
+						?>
+						<option value="<?php echo esc_attr( $vn ); ?>"<?php selected( $vn, $latest ); ?>>
+							v<?php echo esc_html( $vn ); ?><?php echo ( $vn === $latest ) ? ' · ' . esc_html__( 'última', 'hub-61labs' ) : ''; ?>
+						</option>
+					<?php endforeach; ?>
+				</select>
+			</label>
+			<?php endif; ?>
+
+			<div class="hub61-card-foot" data-state="<?php echo esc_attr( $state ); ?>">
+				<?php self::render_extra_action( $item, $state, $can_install ); ?>
+			</div>
+		</article>
+		<?php
+	}
+
+	/**
+	 * Botões de ação de um Extra Plugin conforme o estado.
+	 *
+	 * @param array<string,mixed> $item        Item do manifest.
+	 * @param string              $state       not-installed|inactive|active.
+	 * @param bool                $can_install Usuário pode instalar plugins.
+	 */
+	private static function render_extra_action( $item, $state, $can_install ) {
+		if ( ! $can_install ) {
+			printf(
+				'<span class="hub61-status hub61-status-muted">%s</span>',
+				'not-installed' === $state
+					? esc_html__( 'Não instalado', 'hub-61labs' )
+					: esc_html__( 'Instalado', 'hub-61labs' )
+			);
+			return;
+		}
+
+		if ( 'active' === $state ) {
+			printf(
+				'<span class="hub61-status hub61-status-active"><span aria-hidden="true">●</span> %s</span>',
+				esc_html__( 'Ativo', 'hub-61labs' )
+			);
+			printf(
+				'<button type="button" class="hub61-btn hub61-btn-primary hub61-do" data-act="extra-update">%s</button>',
+				esc_html__( 'Instalar versão', 'hub-61labs' )
+			);
+			if ( ! empty( $item['admin_url'] ) ) {
+				printf(
+					'<a class="hub61-btn hub61-btn-ghost hub61-open" href="%s">%s</a>',
+					esc_url( admin_url( $item['admin_url'] ) ),
+					esc_html__( 'Abrir', 'hub-61labs' )
+				);
+			}
+			return;
+		}
+
+		if ( 'inactive' === $state ) {
+			printf(
+				'<button type="button" class="hub61-btn hub61-btn-primary hub61-do" data-act="extra-install">%s</button>',
+				esc_html__( 'Ativar', 'hub-61labs' )
+			);
+			printf(
+				'<button type="button" class="hub61-btn hub61-btn-ghost hub61-do" data-act="extra-update">%s</button>',
+				esc_html__( 'Instalar versão', 'hub-61labs' )
+			);
+			return;
+		}
+
+		// not-installed
+		printf(
+			'<button type="button" class="hub61-btn hub61-btn-primary hub61-do" data-act="extra-install">%s</button>',
+			esc_html__( 'Instalar', 'hub-61labs' )
+		);
+	}
+
+	/**
 	 * Logo 61 Labs (ícone verde) inline.
 	 */
 	private static function logo_svg() {
@@ -275,8 +409,12 @@ class Hub61_Admin {
 			'author'  => '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
 			'clinic'  => '<path d="M12 5v14M5 12h14" stroke-width="2.4"/><rect x="3" y="3" width="18" height="18" rx="3"/>',
 			'slides'  => '<rect x="6" y="4" width="12" height="16" rx="2"/><rect x="2" y="7" width="5" height="10" rx="1.5"/><rect x="17" y="7" width="5" height="10" rx="1.5"/><path d="M4 12h1M19 12h1"/>',
+			'elementor' => '<circle cx="12" cy="12" r="9.5"/><path d="M8.5 8v8" stroke-width="2"/><path d="M12.5 8h3M12.5 12h3M12.5 16h3" stroke-width="2"/>',
+			'seo'     => '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/><path d="M8.5 11.5l1.8 1.8 3.2-3.4"/>',
+			'dynamic' => '<path d="M3 7h13M3 12h9M3 17h13"/><path d="M18 9l3 3-3 3" fill="none"/>',
+			'extra'   => '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><path d="M17 14v6M14 17h6"/>',
 		);
-		$body = isset( $icons[ $key ] ) ? $icons[ $key ] : $icons['orbit'];
+		$body = isset( $icons[ $key ] ) ? $icons[ $key ] : $icons['extra'];
 		return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' . $body . '</svg>';
 	}
 }

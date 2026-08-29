@@ -24,6 +24,185 @@ class Hub61_Installer {
 		add_action( 'wp_ajax_hub61_status', array( __CLASS__, 'ajax_status' ) );
 		add_action( 'wp_ajax_hub61_versions', array( __CLASS__, 'ajax_versions' ) );
 		add_action( 'wp_ajax_hub61_update', array( __CLASS__, 'ajax_update' ) );
+		// Extra Plugins (repo curado meiaumlabs/extra-plugins, com seletor de versão).
+		add_action( 'wp_ajax_hub61_extra_install', array( __CLASS__, 'ajax_extra_install' ) );
+		add_action( 'wp_ajax_hub61_extra_update', array( __CLASS__, 'ajax_extra_update' ) );
+	}
+
+	/**
+	 * Carrega os arquivos do core necessários para o Plugin_Upgrader.
+	 */
+	private static function ensure_upgrader() {
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/misc.php';
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+		require_once HUB61_DIR . 'includes/class-hub-silent-skin.php';
+	}
+
+	/**
+	 * Instala um plugin a partir de um ZIP (URL). Não ativa.
+	 *
+	 * @param string $zip URL do ZIP.
+	 * @return true|WP_Error
+	 */
+	private static function install_from_zip( $zip ) {
+		self::ensure_upgrader();
+		$upgrader  = new Plugin_Upgrader( new Hub61_Silent_Skin() );
+		$installed = $upgrader->install( $zip );
+		if ( is_wp_error( $installed ) ) {
+			return $installed;
+		}
+		if ( ! $installed ) {
+			$errors = $upgrader->skin->get_errors();
+			return new WP_Error( 'hub61_install', is_wp_error( $errors ) && $errors->has_errors()
+				? $errors->get_error_message()
+				: __( 'Falha ao instalar o plugin.', 'hub-61labs' ) );
+		}
+		return true;
+	}
+
+	/**
+	 * Atualiza (sobrescreve) um plugin instalado a partir de um ZIP (URL).
+	 * Reativa o plugin se ele estava ativo antes.
+	 *
+	 * @param string $zip         URL do ZIP.
+	 * @param string $plugin_file basename (pasta/arquivo.php) do plugin.
+	 * @return bool|WP_Error true/false = estava ativo antes; WP_Error em falha.
+	 */
+	private static function update_from_zip( $zip, $plugin_file ) {
+		self::ensure_upgrader();
+		$was_active = is_plugin_active( $plugin_file );
+		$upgrader   = new Plugin_Upgrader( new Hub61_Silent_Skin() );
+		$result     = $upgrader->run( array(
+			'package'                     => $zip,
+			'destination'                 => WP_PLUGIN_DIR,
+			'clear_destination'           => true,
+			'clear_working'               => true,
+			'abort_if_destination_exists' => false,
+			'hook_extra'                  => array(
+				'type'   => 'plugin',
+				'action' => 'update',
+				'plugin' => $plugin_file,
+			),
+		) );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+		if ( false === $result || null === $result ) {
+			$errors = $upgrader->skin->get_errors();
+			return new WP_Error( 'hub61_update', is_wp_error( $errors ) && $errors->has_errors()
+				? $errors->get_error_message()
+				: __( 'Falha ao atualizar o plugin.', 'hub-61labs' ) );
+		}
+		if ( $was_active ) {
+			activate_plugin( $plugin_file );
+		}
+		return $was_active;
+	}
+
+	/**
+	 * Sanitiza uma string de versão (dígitos, ponto e hífen).
+	 *
+	 * @param mixed $v Versão bruta do request.
+	 * @return string
+	 */
+	private static function sanitize_version( $v ) {
+		return preg_replace( '/[^0-9A-Za-z.\-]/', '', (string) wp_unslash( $v ) );
+	}
+
+	/**
+	 * Resolve a URL do ZIP de um extra plugin para a versão pedida (ou a última).
+	 *
+	 * @param array<string,mixed> $item    Item do manifest.
+	 * @param string              $version Versão pedida ('' = última).
+	 * @return string URL do ZIP ou ''.
+	 */
+	private static function extra_zip( $item, $version ) {
+		if ( '' !== $version ) {
+			return Hub61_Extra::version_zip( $item, $version );
+		}
+		return isset( $item['versions'][0]['download'] ) ? (string) $item['versions'][0]['download'] : '';
+	}
+
+	/**
+	 * Instala (e ativa) uma versão específica de um extra plugin.
+	 */
+	public static function ajax_extra_install() {
+		self::guard();
+		$slug    = isset( $_POST['slug'] ) ? sanitize_key( wp_unslash( $_POST['slug'] ) ) : '';
+		$version = isset( $_POST['version'] ) ? self::sanitize_version( $_POST['version'] ) : '';
+		$item    = Hub61_Extra::get( $slug );
+		if ( ! $item || empty( $item['plugin_file'] ) ) {
+			wp_send_json_error( array( 'message' => __( 'Plugin desconhecido.', 'hub-61labs' ) ) );
+		}
+
+		// Já instalado? Apenas ativa (para trocar de versão, use "Atualizar").
+		if ( 'not-installed' !== self::state( $item ) ) {
+			if ( ! function_exists( 'activate_plugin' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+			}
+			$result = activate_plugin( $item['plugin_file'] );
+			if ( is_wp_error( $result ) ) {
+				wp_send_json_error( array( 'message' => $result->get_error_message() ) );
+			}
+			wp_send_json_success( array( 'state' => 'active', 'message' => __( 'Plugin ativado.', 'hub-61labs' ) ) );
+		}
+
+		$zip = self::extra_zip( $item, $version );
+		if ( '' === $zip ) {
+			wp_send_json_error( array( 'message' => __( 'Versão indisponível.', 'hub-61labs' ) ) );
+		}
+
+		$installed = self::install_from_zip( $zip );
+		if ( is_wp_error( $installed ) ) {
+			wp_send_json_error( array( 'message' => $installed->get_error_message() ) );
+		}
+
+		if ( ! function_exists( 'activate_plugin' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+		$activated = activate_plugin( $item['plugin_file'] );
+		$state     = is_wp_error( $activated ) ? 'inactive' : 'active';
+		wp_send_json_success( array(
+			'state'     => $state,
+			'installed' => self::installed_version( $item ),
+			'message'   => 'active' === $state
+				? __( 'Instalado e ativado com sucesso.', 'hub-61labs' )
+				: __( 'Instalado. Ative manualmente na página de Plugins.', 'hub-61labs' ),
+		) );
+	}
+
+	/**
+	 * Atualiza um extra plugin instalado para a versão escolhida (pode ser downgrade).
+	 */
+	public static function ajax_extra_update() {
+		self::guard();
+		$slug    = isset( $_POST['slug'] ) ? sanitize_key( wp_unslash( $_POST['slug'] ) ) : '';
+		$version = isset( $_POST['version'] ) ? self::sanitize_version( $_POST['version'] ) : '';
+		$item    = Hub61_Extra::get( $slug );
+		if ( ! $item || empty( $item['plugin_file'] ) ) {
+			wp_send_json_error( array( 'message' => __( 'Plugin desconhecido.', 'hub-61labs' ) ) );
+		}
+		if ( 'not-installed' === self::state( $item ) ) {
+			wp_send_json_error( array( 'message' => __( 'O plugin não está instalado.', 'hub-61labs' ) ) );
+		}
+
+		$zip = self::extra_zip( $item, $version );
+		if ( '' === $zip ) {
+			wp_send_json_error( array( 'message' => __( 'Versão indisponível.', 'hub-61labs' ) ) );
+		}
+
+		$res = self::update_from_zip( $zip, $item['plugin_file'] );
+		if ( is_wp_error( $res ) ) {
+			wp_send_json_error( array( 'message' => $res->get_error_message() ) );
+		}
+
+		wp_send_json_success( array(
+			'state'     => $res ? 'active' : 'inactive',
+			'installed' => self::installed_version( $item ),
+			'message'   => __( 'Atualizado com sucesso.', 'hub-61labs' ),
+		) );
 	}
 
 	/**

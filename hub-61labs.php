@@ -3,7 +3,7 @@
  * Plugin Name:       Hub 61 Labs
  * Plugin URI:        https://61labs.com.br
  * Description:       Central de plugins da 61 Labs. Descubra e instale todas as ferramentas da 61 Labs em um só lugar, envie ideias e fale com o suporte — direto do painel do WordPress.
- * Version:           1.2.0
+ * Version:           1.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            61 Labs
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'HUB61_VERSION', '1.2.0' );
+define( 'HUB61_VERSION', '1.3.0' );
 define( 'HUB61_FILE', __FILE__ );
 define( 'HUB61_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HUB61_URL', plugin_dir_url( __FILE__ ) );
@@ -46,6 +46,7 @@ $hub61_update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpd
 $hub61_update_checker->getVcsApi()->enableReleaseAssets();
 
 require_once HUB61_DIR . 'includes/class-hub-catalog.php';
+require_once HUB61_DIR . 'includes/class-hub-extra.php';
 require_once HUB61_DIR . 'includes/class-hub-installer.php';
 require_once HUB61_DIR . 'includes/class-hub-admin.php';
 

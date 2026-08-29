@@ -200,3 +200,20 @@
 	.hub61-header { flex-direction: column; align-items: flex-start; }
 	.hub61-wrap { margin-right: 0; }
 }
+
+/* ── Extra Plugins: seletor de versão ──────────────────────────────── */
+.hub61-verpick {
+	display: flex; align-items: center; gap: 10px; margin-top: 14px;
+}
+.hub61-verpick-label {
+	font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+	color: var(--h-muted); white-space: nowrap;
+}
+.hub61-ver-select {
+	flex: 1; min-width: 0; font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600;
+	color: var(--h-text); background: var(--h-card-2); border: 1px solid var(--h-line);
+	border-radius: 10px; padding: 8px 12px; cursor: pointer; line-height: 1.2;
+	font-variant-numeric: tabular-nums;
+}
+.hub61-ver-select:focus-visible { outline: 2px solid var(--h-focus); outline-offset: 2px; }
+.hub61-card-extra .hub61-card-foot { margin-top: 14px; }

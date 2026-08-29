@@ -117,21 +117,99 @@
 		} ).catch( function () {} );
 	}
 
+	// Re-renderiza o rodapé de um card de Extra Plugin (mantém o seletor de versão intacto).
+	function renderExtraState( card, state ) {
+		var foot = card.querySelector( '.hub61-card-foot' );
+		if ( ! foot ) {
+			return;
+		}
+		foot.setAttribute( 'data-state', state );
+		var adminUrl = card.getAttribute( 'data-admin' );
+		var updateBtn = '<button type="button" class="hub61-btn hub61-btn-ghost hub61-do" data-act="extra-update">Instalar versão</button>';
+		if ( state === 'active' ) {
+			foot.innerHTML =
+				'<span class="hub61-status hub61-status-active"><span aria-hidden="true">●</span> Ativo</span>' +
+				'<button type="button" class="hub61-btn hub61-btn-primary hub61-do" data-act="extra-update">Instalar versão</button>' +
+				( adminUrl ? '<a class="hub61-btn hub61-btn-ghost hub61-open" href="' + adminUrl + '">Abrir</a>' : '' );
+		} else if ( state === 'inactive' ) {
+			foot.innerHTML =
+				'<button type="button" class="hub61-btn hub61-btn-primary hub61-do" data-act="extra-install">Ativar</button>' + updateBtn;
+		} else {
+			foot.innerHTML =
+				'<button type="button" class="hub61-btn hub61-btn-primary hub61-do" data-act="extra-install">Instalar</button>';
+		}
+	}
+
+	// Atualiza a meta (versão instalada + badge de atualização) de um card extra.
+	function applyExtraMeta( card, installed ) {
+		var latest = card.getAttribute( 'data-latest' ) || '';
+		var instWrap = card.querySelector( '.hub61-ver-installed' );
+		var instEl = card.querySelector( '.hub61-ver-installed-num' );
+		if ( installed && instWrap && instEl ) {
+			instEl.textContent = 'v' + installed;
+			instWrap.hidden = false;
+			card.setAttribute( 'data-installed', installed );
+		}
+		var badge = card.querySelector( '.hub61-ver-badge' );
+		if ( badge ) {
+			var hasUpdate = installed && latest && cmpVer( installed, latest ) < 0;
+			badge.hidden = ! hasUpdate;
+		}
+	}
+
+	// Compara duas versões (ex.: "3.8.10.1" vs "4.2.0"). Retorna -1, 0 ou 1.
+	function cmpVer( a, b ) {
+		var pa = String( a ).split( '.' );
+		var pb = String( b ).split( '.' );
+		var n = Math.max( pa.length, pb.length );
+		for ( var i = 0; i < n; i++ ) {
+			var na = parseInt( pa[ i ] || '0', 10 );
+			var nb = parseInt( pb[ i ] || '0', 10 );
+			if ( na > nb ) { return 1; }
+			if ( na < nb ) { return -1; }
+		}
+		return 0;
+	}
+
 	function handleAction( btn ) {
 		var card = btn.closest( '.hub61-card' );
 		var foot = card.querySelector( '.hub61-card-foot' );
 		var slug = card.getAttribute( 'data-slug' );
 		var act = btn.getAttribute( 'data-act' );
-		var actionMap = { activate: 'hub61_activate', update: 'hub61_update', install: 'hub61_install' };
-		var busyMap = { activate: i18n.activating || 'Ativando…', update: i18n.updating || 'Atualizando…', install: i18n.installing || 'Instalando…' };
-		var labelMap = { activate: 'Ativar', update: i18n.update || 'Atualizar', install: 'Instalar' };
+		var isExtra = card.getAttribute( 'data-extra' ) === '1';
+		var actionMap = {
+			activate: 'hub61_activate', update: 'hub61_update', install: 'hub61_install',
+			'extra-install': 'hub61_extra_install', 'extra-update': 'hub61_extra_update'
+		};
+		var busyMap = {
+			activate: i18n.activating || 'Ativando…', update: i18n.updating || 'Atualizando…', install: i18n.installing || 'Instalando…',
+			'extra-install': i18n.installing || 'Instalando…', 'extra-update': i18n.updating || 'Atualizando…'
+		};
+		var labelMap = {
+			activate: 'Ativar', update: i18n.update || 'Atualizar', install: 'Instalar',
+			'extra-install': 'Instalar', 'extra-update': 'Instalar versão'
+		};
+
+		var payload = { slug: slug };
+		if ( isExtra ) {
+			var sel = card.querySelector( '.hub61-ver-select' );
+			payload.version = sel ? sel.value : '';
+		}
 
 		btn.classList.add( 'is-busy' );
 		btn.disabled = true;
 		btn.textContent = busyMap[ act ];
 
-		post( actionMap[ act ] || 'hub61_install', { slug: slug } ).then( function ( res ) {
+		post( actionMap[ act ] || 'hub61_install', payload ).then( function ( res ) {
 			if ( res && res.success ) {
+				if ( isExtra ) {
+					applyExtraMeta( card, res.data.installed || card.getAttribute( 'data-installed' ) );
+					renderExtraState( card, res.data.state || 'active' );
+					if ( res.data.message ) {
+						message( card.querySelector( '.hub61-card-foot' ), res.data.message, true );
+					}
+					return;
+				}
 				if ( act === 'update' ) {
 					// Update concluído: limpa o pendente e atualiza a meta de versões.
 					card.__update = null;
