@@ -4,7 +4,7 @@ Tags: 61labs, plugins, hub, instalador, marketplace
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.6.0
+Stable tag: 1.7.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,6 +48,12 @@ Não. Os plugins instalados pelo Hub são independentes e continuam funcionando 
 Instalar e ativar plugins exige a permissão `install_plugins` (normalmente administradores).
 
 == Changelog ==
+
+= 1.7.0 =
+* **Comparação com o período anterior**: cada indicador mostra a variação em % com seta (▲ verde / ▼ vermelha), respeitando métricas onde "menor é melhor" (ex.: taxa de rejeição).
+* **Gráficos no relatório** (SVG, renderizados no PDF e na pré-visualização): gráfico de **linha** (período atual vs anterior) e gráfico de **barras comparativo**.
+* Novo controle "Gráficos" no modelo, ao lado de KPIs e Tabelas.
+* Contrato `hub61_report_sections` estendido: métricas com `raw`/`prev`/`better` e `charts` (line/bar). Orbit Track já fornece comparação e gráficos.
 
 = 1.6.0 =
 * **Construtor de relatórios** com pré-visualização ao vivo (HTML) e botão **Ver PDF** — veja exatamente o que será enviado antes de enviar.

@@ -69,6 +69,7 @@ class Hub61_Report {
 			'range'         => '28d',
 			'show_kpis'     => true,
 			'show_tables'   => true,
+			'show_charts'   => true,
 		);
 	}
 
@@ -126,6 +127,7 @@ class Hub61_Report {
 			'range'         => in_array( $range, array( '7d', '28d', '90d', '365d' ), true ) ? $range : '28d',
 			'show_kpis'     => ! empty( $_POST['show_kpis'] ), // phpcs:ignore
 			'show_tables'   => ! empty( $_POST['show_tables'] ), // phpcs:ignore
+			'show_charts'   => ! empty( $_POST['show_charts'] ), // phpcs:ignore
 		);
 	}
 
@@ -247,6 +249,128 @@ class Hub61_Report {
 	}
 
 	/**
+	 * Variação percentual de uma métrica vs período anterior.
+	 *
+	 * @param array $m Métrica (precisa de 'raw' e 'prev').
+	 * @return array{pct:float,dir:string,good:?bool}|null
+	 */
+	private static function delta( $m ) {
+		if ( ! isset( $m['raw'] ) || ! isset( $m['prev'] ) ) {
+			return null;
+		}
+		$cur  = (float) $m['raw'];
+		$prev = (float) $m['prev'];
+		if ( 0.0 === $prev ) {
+			if ( 0.0 === $cur ) {
+				return null;
+			}
+			$pct = 100.0;
+		} else {
+			$pct = ( $cur - $prev ) / abs( $prev ) * 100.0;
+		}
+		$dir    = $pct > 0.5 ? 'up' : ( $pct < -0.5 ? 'down' : 'flat' );
+		$better = isset( $m['better'] ) ? $m['better'] : 'up';
+		$good   = ( 'flat' === $dir ) ? null : ( ( 'up' === $better ) ? ( 'up' === $dir ) : ( 'down' === $dir ) );
+		return array( 'pct' => $pct, 'dir' => $dir, 'good' => $good );
+	}
+
+	/** HTML da variação (seta + %) de uma métrica, ou '' se não houver comparação. */
+	private static function delta_html( $m ) {
+		$d = self::delta( $m );
+		if ( null === $d ) {
+			return '';
+		}
+		$arrow = 'up' === $d['dir'] ? "\xE2\x96\xB2" : ( 'down' === $d['dir'] ? "\xE2\x96\xBC" : "\xE2\x96\xA0" );
+		$color = ( true === $d['good'] ) ? '#16a34a' : ( ( false === $d['good'] ) ? '#dc2626' : '#94a3b8' );
+		$sign  = $d['pct'] >= 0 ? '+' : '-';
+		return '<div class="d" style="color:' . $color . '">' . $arrow . ' ' . $sign . number_format( abs( $d['pct'] ), 1, ',', '.' ) . '%</div>';
+	}
+
+	/** Gráfico de linha (uma ou mais séries) como <img> SVG data-URI. */
+	private static function svg_line( $c ) {
+		$series = isset( $c['series'] ) && is_array( $c['series'] ) ? $c['series'] : array();
+		if ( empty( $series ) ) {
+			return '';
+		}
+		$w = 560; $h = 200; $pt = 30; $pb = 16; $px = 10;
+		$max = 1.0; $n = 0;
+		foreach ( $series as $s ) {
+			$pts = isset( $s['points'] ) ? array_map( 'floatval', (array) $s['points'] ) : array();
+			foreach ( $pts as $p ) { if ( $p > $max ) { $max = $p; } }
+			if ( count( $pts ) > $n ) { $n = count( $pts ); }
+		}
+		$iw = $w - 2 * $px; $ih = $h - $pt - $pb;
+		$svg  = '<svg xmlns="http://www.w3.org/2000/svg" width="' . $w . '" height="' . $h . '" viewBox="0 0 ' . $w . ' ' . $h . '">';
+		$svg .= '<rect width="' . $w . '" height="' . $h . '" fill="#ffffff"/>';
+		for ( $g = 0; $g <= 4; $g++ ) {
+			$y = round( $pt + $ih * $g / 4, 1 );
+			$svg .= '<line x1="' . $px . '" y1="' . $y . '" x2="' . ( $w - $px ) . '" y2="' . $y . '" stroke="#e2e8f0" stroke-width="1"/>';
+		}
+		$lx = $px;
+		foreach ( $series as $s ) {
+			$color = isset( $s['color'] ) ? $s['color'] : '#2563eb';
+			$label = isset( $s['label'] ) ? (string) $s['label'] : '';
+			$pts   = isset( $s['points'] ) ? array_map( 'floatval', (array) $s['points'] ) : array();
+			$m     = count( $pts );
+			$poly  = '';
+			for ( $i = 0; $i < $m; $i++ ) {
+				$x = $px + $iw * ( $m > 1 ? $i / ( $m - 1 ) : 0 );
+				$y = $pt + $ih - ( $ih * ( $pts[ $i ] / $max ) );
+				$poly .= round( $x, 1 ) . ',' . round( $y, 1 ) . ' ';
+			}
+			if ( '' !== $poly ) {
+				$svg .= '<polyline fill="none" stroke="' . $color . '" stroke-width="2" points="' . trim( $poly ) . '"/>';
+			}
+			$svg .= '<rect x="' . $lx . '" y="10" width="10" height="10" rx="2" fill="' . $color . '"/>';
+			$svg .= '<text x="' . ( $lx + 14 ) . '" y="19" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#334155">' . htmlspecialchars( $label, ENT_QUOTES ) . '</text>';
+			$lx  += 30 + strlen( $label ) * 6;
+		}
+		$svg .= '</svg>';
+		return '<img class="chart" src="data:image/svg+xml;base64,' . base64_encode( $svg ) . '" alt="">';
+	}
+
+	/** Gráfico de barras comparativo (atual vs anterior) como <img> SVG data-URI. */
+	private static function svg_bar( $c ) {
+		$items = isset( $c['items'] ) && is_array( $c['items'] ) ? array_slice( $c['items'], 0, 6 ) : array();
+		if ( empty( $items ) ) {
+			return '';
+		}
+		$w = 560; $h = 210; $pt = 30; $pb = 42; $px = 12;
+		$max = 1.0;
+		foreach ( $items as $it ) {
+			$max = max( $max, (float) ( isset( $it['current'] ) ? $it['current'] : 0 ), (float) ( isset( $it['previous'] ) ? $it['previous'] : 0 ) );
+		}
+		$iw = $w - 2 * $px; $ih = $h - $pt - $pb;
+		$groups = count( $items ); $gw = $iw / $groups; $bw = min( 26, $gw / 3.2 );
+		$c_cur = '#2563eb'; $c_prev = '#cbd5e1';
+		$svg  = '<svg xmlns="http://www.w3.org/2000/svg" width="' . $w . '" height="' . $h . '" viewBox="0 0 ' . $w . ' ' . $h . '">';
+		$svg .= '<rect width="' . $w . '" height="' . $h . '" fill="#ffffff"/>';
+		for ( $g = 0; $g <= 4; $g++ ) {
+			$y = round( $pt + $ih * $g / 4, 1 );
+			$svg .= '<line x1="' . $px . '" y1="' . $y . '" x2="' . ( $w - $px ) . '" y2="' . $y . '" stroke="#e2e8f0" stroke-width="1"/>';
+		}
+		// Legenda.
+		$svg .= '<rect x="' . $px . '" y="10" width="10" height="10" rx="2" fill="' . $c_cur . '"/><text x="' . ( $px + 14 ) . '" y="19" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#334155">Atual</text>';
+		$svg .= '<rect x="' . ( $px + 70 ) . '" y="10" width="10" height="10" rx="2" fill="' . $c_prev . '"/><text x="' . ( $px + 84 ) . '" y="19" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#334155">Anterior</text>';
+		$base = $pt + $ih;
+		foreach ( $items as $i => $it ) {
+			$cur   = (float) ( isset( $it['current'] ) ? $it['current'] : 0 );
+			$prev  = (float) ( isset( $it['previous'] ) ? $it['previous'] : 0 );
+			$label = isset( $it['label'] ) ? (string) $it['label'] : '';
+			$gx    = $px + $gw * $i + $gw / 2;
+			$hc    = $ih * ( $cur / $max );
+			$hp    = $ih * ( $prev / $max );
+			$x1    = round( $gx - $bw - 2, 1 ); $x2 = round( $gx + 2, 1 );
+			$svg  .= '<rect x="' . $x1 . '" y="' . round( $base - $hc, 1 ) . '" width="' . round( $bw, 1 ) . '" height="' . round( $hc, 1 ) . '" fill="' . $c_cur . '"/>';
+			$svg  .= '<rect x="' . $x2 . '" y="' . round( $base - $hp, 1 ) . '" width="' . round( $bw, 1 ) . '" height="' . round( $hp, 1 ) . '" fill="' . $c_prev . '"/>';
+			$lbl   = mb_strimwidth( $label, 0, 12, '…', 'UTF-8' );
+			$svg  .= '<text x="' . round( $gx, 1 ) . '" y="' . ( $base + 14 ) . '" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="10" fill="#64748b">' . htmlspecialchars( $lbl, ENT_QUOTES ) . '</text>';
+		}
+		$svg .= '</svg>';
+		return '<img class="chart" src="data:image/svg+xml;base64,' . base64_encode( $svg ) . '" alt="">';
+	}
+
+	/**
 	 * Monta o HTML do relatório conforme o modelo.
 	 *
 	 * @param array $sections Seções.
@@ -276,6 +400,8 @@ class Hub61_Report {
 	.kpis td { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; width: 16%; vertical-align: top; }
 	.kpis .l { font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
 	.kpis .v { font-size: 16px; font-weight: bold; color: <?php echo $esc( $ink ); ?>; }
+	.kpis .d { font-size: 10px; font-weight: bold; margin-top: 2px; }
+	.chart { display: block; margin: 4px 0 10px; max-width: 100%; }
 	table.data { width: 100%; border-collapse: collapse; margin: 6px 0 4px; }
 	table.data th { background: <?php echo $esc( $ink ); ?>; color: #fff; font-size: 10px; text-align: left; padding: 6px 8px; }
 	table.data td { border-bottom: 1px solid #e2e8f0; padding: 5px 8px; font-size: 11px; }
@@ -304,9 +430,18 @@ class Hub61_Report {
 		<?php if ( ! empty( $tpl['show_kpis'] ) && ! empty( $s['metrics'] ) && is_array( $s['metrics'] ) ) : ?>
 		<table class="kpis"><tr>
 			<?php foreach ( array_slice( $s['metrics'], 0, 6 ) as $m ) : ?>
-			<td><div class="l"><?php echo $esc( isset( $m['label'] ) ? $m['label'] : '' ); ?></div><div class="v"><?php echo $esc( isset( $m['value'] ) ? $m['value'] : '' ); ?></div></td>
+			<td><div class="l"><?php echo $esc( isset( $m['label'] ) ? $m['label'] : '' ); ?></div><div class="v"><?php echo $esc( isset( $m['value'] ) ? $m['value'] : '' ); ?></div><?php echo self::delta_html( $m ); // phpcs:ignore ?></td>
 			<?php endforeach; ?>
 		</tr></table>
+		<?php endif; ?>
+		<?php if ( ! empty( $tpl['show_charts'] ) && ! empty( $s['charts'] ) && is_array( $s['charts'] ) ) : ?>
+			<?php foreach ( $s['charts'] as $ch ) :
+				$img = ( isset( $ch['type'] ) && 'bar' === $ch['type'] ) ? self::svg_bar( $ch ) : self::svg_line( $ch );
+				if ( '' === $img ) { continue; }
+				?>
+				<?php if ( ! empty( $ch['title'] ) ) : ?><div class="tt"><?php echo $esc( $ch['title'] ); ?></div><?php endif; ?>
+				<?php echo $img; // phpcs:ignore — SVG data-URI gerado internamente ?>
+			<?php endforeach; ?>
 		<?php endif; ?>
 		<?php if ( ! empty( $tpl['show_tables'] ) && ! empty( $s['tables'] ) && is_array( $s['tables'] ) ) : ?>
 			<?php foreach ( $s['tables'] as $t ) : ?>
@@ -762,8 +897,9 @@ class Hub61_Report {
 							<?php endforeach; ?>
 							</div>
 							<p style="margin-top:12px">
-								<label class="hub61-check"><input type="checkbox" id="show_kpis" <?php checked( ! empty( $tpl['show_kpis'] ) ); ?>> <?php esc_html_e( 'Mostrar indicadores (KPIs)', 'hub-61labs' ); ?></label>&nbsp;&nbsp;
-								<label class="hub61-check"><input type="checkbox" id="show_tables" <?php checked( ! empty( $tpl['show_tables'] ) ); ?>> <?php esc_html_e( 'Mostrar tabelas', 'hub-61labs' ); ?></label>
+								<label class="hub61-check"><input type="checkbox" id="show_kpis" <?php checked( ! empty( $tpl['show_kpis'] ) ); ?>> <?php esc_html_e( 'Indicadores (KPIs + comparação)', 'hub-61labs' ); ?></label>&nbsp;&nbsp;
+								<label class="hub61-check"><input type="checkbox" id="show_charts" <?php checked( ! empty( $tpl['show_charts'] ) ); ?>> <?php esc_html_e( 'Gráficos', 'hub-61labs' ); ?></label>&nbsp;&nbsp;
+								<label class="hub61-check"><input type="checkbox" id="show_tables" <?php checked( ! empty( $tpl['show_tables'] ) ); ?>> <?php esc_html_e( 'Tabelas', 'hub-61labs' ); ?></label>
 							</p>
 							<p><label><?php esc_html_e( 'Período dos dados:', 'hub-61labs' ); ?>
 								<select id="range">

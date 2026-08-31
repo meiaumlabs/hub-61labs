@@ -45,6 +45,7 @@
 			plugins: plugins(),
 			range: val( 'range' ),
 			show_kpis: checked( 'show_kpis' ),
+			show_charts: checked( 'show_charts' ),
 			show_tables: checked( 'show_tables' )
 		};
 	}
@@ -88,6 +89,7 @@
 		el( 'footer' ).value = tpl.footer || '';
 		el( 'range' ).value = tpl.range || '28d';
 		el( 'show_kpis' ).checked = !! tpl.show_kpis;
+		el( 'show_charts' ).checked = !! tpl.show_charts;
 		el( 'show_tables' ).checked = !! tpl.show_tables;
 		var want = tpl.plugins || [];
 		document.querySelectorAll( '.tpl-plugin' ).forEach( function ( c ) { c.checked = want.indexOf( c.value ) !== -1; } );
@@ -146,7 +148,7 @@
 		}
 		// Novo modelo (limpa em branco).
 		var neu = el( 'tpl_new' );
-		if ( neu ) { neu.addEventListener( 'click', function () { fillForm( '', { name: 'Novo modelo', color_primary: '#16a34a', color_ink: '#0f172a', footer: '© 61 Labs — os dados são seus.', range: '28d', show_kpis: true, show_tables: true, plugins: plugins() } ); el( 'tpl_name' ).focus(); } ); }
+		if ( neu ) { neu.addEventListener( 'click', function () { fillForm( '', { name: 'Novo modelo', color_primary: '#16a34a', color_ink: '#0f172a', footer: '© 61 Labs — os dados são seus.', range: '28d', show_kpis: true, show_charts: true, show_tables: true, plugins: plugins() } ); el( 'tpl_name' ).focus(); } ); }
 		// Excluir modelo.
 		var del = el( 'tpl_delete' );
 		if ( del ) { del.addEventListener( 'click', function () {
