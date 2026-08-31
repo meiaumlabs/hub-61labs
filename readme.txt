@@ -4,7 +4,7 @@ Tags: 61labs, plugins, hub, instalador, marketplace
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.7.0
+Stable tag: 1.7.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,6 +48,9 @@ Não. Os plugins instalados pelo Hub são independentes e continuam funcionando 
 Instalar e ativar plugins exige a permissão `install_plugins` (normalmente administradores).
 
 == Changelog ==
+
+= 1.7.1 =
+* Gráfico de barras agora suporta **série única** (sem período anterior): mostra o valor sobre cada barra e omite a legenda "Anterior" — usado por seções sem comparação (ex.: pontuação de clusters).
 
 = 1.7.0 =
 * **Comparação com o período anterior**: cada indicador mostra a variação em % com seta (▲ verde / ▼ vermelha), respeitando métricas onde "menor é melhor" (ex.: taxa de rejeição).

@@ -340,8 +340,12 @@ class Hub61_Report {
 		foreach ( $items as $it ) {
 			$max = max( $max, (float) ( isset( $it['current'] ) ? $it['current'] : 0 ), (float) ( isset( $it['previous'] ) ? $it['previous'] : 0 ) );
 		}
+		$has_prev = false;
+		foreach ( $items as $it ) {
+			if ( (float) ( isset( $it['previous'] ) ? $it['previous'] : 0 ) > 0 ) { $has_prev = true; break; }
+		}
 		$iw = $w - 2 * $px; $ih = $h - $pt - $pb;
-		$groups = count( $items ); $gw = $iw / $groups; $bw = min( 26, $gw / 3.2 );
+		$groups = count( $items ); $gw = $iw / $groups; $bw = $has_prev ? min( 26, $gw / 3.2 ) : min( 40, $gw / 1.8 );
 		$c_cur = '#2563eb'; $c_prev = '#cbd5e1';
 		$svg  = '<svg xmlns="http://www.w3.org/2000/svg" width="' . $w . '" height="' . $h . '" viewBox="0 0 ' . $w . ' ' . $h . '">';
 		$svg .= '<rect width="' . $w . '" height="' . $h . '" fill="#ffffff"/>';
@@ -349,9 +353,11 @@ class Hub61_Report {
 			$y = round( $pt + $ih * $g / 4, 1 );
 			$svg .= '<line x1="' . $px . '" y1="' . $y . '" x2="' . ( $w - $px ) . '" y2="' . $y . '" stroke="#e2e8f0" stroke-width="1"/>';
 		}
-		// Legenda.
+		// Legenda (só mostra "Anterior" quando há dados comparativos).
 		$svg .= '<rect x="' . $px . '" y="10" width="10" height="10" rx="2" fill="' . $c_cur . '"/><text x="' . ( $px + 14 ) . '" y="19" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#334155">Atual</text>';
-		$svg .= '<rect x="' . ( $px + 70 ) . '" y="10" width="10" height="10" rx="2" fill="' . $c_prev . '"/><text x="' . ( $px + 84 ) . '" y="19" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#334155">Anterior</text>';
+		if ( $has_prev ) {
+			$svg .= '<rect x="' . ( $px + 70 ) . '" y="10" width="10" height="10" rx="2" fill="' . $c_prev . '"/><text x="' . ( $px + 84 ) . '" y="19" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#334155">Anterior</text>';
+		}
 		$base = $pt + $ih;
 		foreach ( $items as $i => $it ) {
 			$cur   = (float) ( isset( $it['current'] ) ? $it['current'] : 0 );
@@ -359,11 +365,17 @@ class Hub61_Report {
 			$label = isset( $it['label'] ) ? (string) $it['label'] : '';
 			$gx    = $px + $gw * $i + $gw / 2;
 			$hc    = $ih * ( $cur / $max );
-			$hp    = $ih * ( $prev / $max );
-			$x1    = round( $gx - $bw - 2, 1 ); $x2 = round( $gx + 2, 1 );
-			$svg  .= '<rect x="' . $x1 . '" y="' . round( $base - $hc, 1 ) . '" width="' . round( $bw, 1 ) . '" height="' . round( $hc, 1 ) . '" fill="' . $c_cur . '"/>';
-			$svg  .= '<rect x="' . $x2 . '" y="' . round( $base - $hp, 1 ) . '" width="' . round( $bw, 1 ) . '" height="' . round( $hp, 1 ) . '" fill="' . $c_prev . '"/>';
-			$lbl   = mb_strimwidth( $label, 0, 12, '…', 'UTF-8' );
+			if ( $has_prev ) {
+				$hp  = $ih * ( $prev / $max );
+				$x1  = round( $gx - $bw - 2, 1 ); $x2 = round( $gx + 2, 1 );
+				$svg .= '<rect x="' . $x1 . '" y="' . round( $base - $hc, 1 ) . '" width="' . round( $bw, 1 ) . '" height="' . round( $hc, 1 ) . '" fill="' . $c_cur . '"/>';
+				$svg .= '<rect x="' . $x2 . '" y="' . round( $base - $hp, 1 ) . '" width="' . round( $bw, 1 ) . '" height="' . round( $hp, 1 ) . '" fill="' . $c_prev . '"/>';
+			} else {
+				$x1  = round( $gx - $bw / 2, 1 );
+				$svg .= '<rect x="' . $x1 . '" y="' . round( $base - $hc, 1 ) . '" width="' . round( $bw, 1 ) . '" height="' . round( $hc, 1 ) . '" rx="2" fill="' . $c_cur . '"/>';
+				$svg .= '<text x="' . round( $gx, 1 ) . '" y="' . round( $base - $hc - 3, 1 ) . '" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="9" fill="#334155">' . htmlspecialchars( (string) round( $cur ), ENT_QUOTES ) . '</text>';
+			}
+			$lbl   = mb_strimwidth( $label, 0, 14, '…', 'UTF-8' );
 			$svg  .= '<text x="' . round( $gx, 1 ) . '" y="' . ( $base + 14 ) . '" text-anchor="middle" font-family="DejaVu Sans, sans-serif" font-size="10" fill="#64748b">' . htmlspecialchars( $lbl, ENT_QUOTES ) . '</text>';
 		}
 		$svg .= '</svg>';
