@@ -4,7 +4,7 @@ Tags: 61labs, plugins, hub, instalador, marketplace
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.5.0
+Stable tag: 1.6.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,6 +48,11 @@ Não. Os plugins instalados pelo Hub são independentes e continuam funcionando 
 Instalar e ativar plugins exige a permissão `install_plugins` (normalmente administradores).
 
 == Changelog ==
+
+= 1.6.0 =
+* **Construtor de relatórios** com pré-visualização ao vivo (HTML) e botão **Ver PDF** — veja exatamente o que será enviado antes de enviar.
+* **Modelos de relatório** (criar, salvar, duplicar via "Novo", excluir): logotipo, cores (primária e títulos), texto de introdução e rodapé, plugins/seções incluídos, período e exibição de KPIs/tabelas.
+* Logotipo pela biblioteca de mídia; o modelo ativo é usado nos envios manuais e no agendamento.
 
 = 1.5.0 =
 * Nova página **Relatórios de Performance**: gera um PDF com a performance dos plugins 61 Labs e envia por e-mail e WhatsApp.

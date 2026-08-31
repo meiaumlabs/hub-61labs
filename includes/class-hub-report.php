@@ -3,12 +3,12 @@
  * Hub61_Report — relatório de performance dos plugins 61 Labs.
  *
  * Reúne seções fornecidas por cada plugin (filtro `hub61_report_sections`), gera um PDF
- * (Dompdf embutido) e envia por e-mail e por WhatsApp (Evolution API) conforme a
- * configuração de cada usuário. O número do dono ({@see Hub61_Evolution::OWNER_NUMBER})
- * sempre recebe uma cópia via WhatsApp.
+ * (Dompdf embutido) e envia por e-mail e por WhatsApp (Evolution API). Suporta MODELOS
+ * de relatório (logotipo, cores, textos, plugins, período, seções) com pré-visualização
+ * (HTML ao vivo e PDF) antes do envio. O número do dono
+ * ({@see Hub61_Evolution::OWNER_NUMBER}) sempre recebe uma cópia via WhatsApp.
  *
- * Fase 1: cada site relata a si mesmo. A seleção remota de sites (console central) fica
- * para a fase 2.
+ * Fase 1: cada site relata a si mesmo. Seleção remota de sites = fase 2.
  *
  * @package Hub61
  */
@@ -19,11 +19,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Hub61_Report {
 
-	const OPT_PLUGINS  = 'hub61_report_plugins';   // array<string> slugs incluídos
-	const OPT_SCHEDULE = 'hub61_report_schedule';  // off | weekly | monthly
-	const OPT_RANGE    = 'hub61_report_range';     // 7d | 28d | 90d | 365d
+	const OPT_TEMPLATES = 'hub61_report_templates'; // array<id,config>
+	const OPT_ACTIVE    = 'hub61_report_active';     // id do modelo usado no envio/agendamento
+	const OPT_SCHEDULE  = 'hub61_report_schedule';   // off | weekly | monthly
 
-	const META_OPTIN    = 'hub61_report_optin';    // '1' | ''
+	const META_OPTIN    = 'hub61_report_optin';      // '1' | ''
 	const META_EMAIL    = 'hub61_report_email';
 	const META_WHATSAPP = 'hub61_report_whatsapp';
 
@@ -38,35 +38,123 @@ class Hub61_Report {
 		add_action( 'wp_ajax_hub61_report_save', array( __CLASS__, 'ajax_save' ) );
 		add_action( 'wp_ajax_hub61_report_test', array( __CLASS__, 'ajax_test_evolution' ) );
 		add_action( 'wp_ajax_hub61_report_send', array( __CLASS__, 'ajax_send_now' ) );
+		add_action( 'wp_ajax_hub61_report_tpl_save', array( __CLASS__, 'ajax_tpl_save' ) );
+		add_action( 'wp_ajax_hub61_report_tpl_get', array( __CLASS__, 'ajax_tpl_get' ) );
+		add_action( 'wp_ajax_hub61_report_tpl_delete', array( __CLASS__, 'ajax_tpl_delete' ) );
+		add_action( 'wp_ajax_hub61_report_preview_html', array( __CLASS__, 'ajax_preview_html' ) );
+		add_action( 'wp_ajax_hub61_report_preview', array( __CLASS__, 'ajax_preview_pdf' ) );
 
 		add_filter( 'cron_schedules', array( __CLASS__, 'cron_schedules' ) );
 		add_action( self::CRON_HOOK, array( __CLASS__, 'cron_run' ) );
 	}
 
 	/* --------------------------------------------------------------------- */
-	/* Configuração                                                          */
+	/* Modelos (templates)                                                   */
 	/* --------------------------------------------------------------------- */
 
 	/**
-	 * Slugs de plugins selecionados para o relatório (default: todos do catálogo).
+	 * Configuração padrão de um modelo.
 	 *
-	 * @return array<int,string>
+	 * @return array<string,mixed>
 	 */
-	public static function selected_slugs() {
-		$saved = get_option( self::OPT_PLUGINS, null );
-		if ( is_array( $saved ) ) {
-			return array_values( array_filter( array_map( 'sanitize_key', $saved ) ) );
-		}
-		return wp_list_pluck( Hub61_Catalog::all(), 'slug' );
+	public static function default_template() {
+		return array(
+			'name'          => __( 'Modelo padrão', 'hub-61labs' ),
+			'logo'          => '',
+			'color_primary' => '#16a34a',
+			'color_ink'     => '#0f172a',
+			'intro'         => '',
+			'footer'        => __( '© 61 Labs — os dados são seus.', 'hub-61labs' ),
+			'plugins'       => wp_list_pluck( Hub61_Catalog::all(), 'slug' ),
+			'range'         => '28d',
+			'show_kpis'     => true,
+			'show_tables'   => true,
+		);
 	}
 
 	/**
-	 * Itens (catálogo + extra) correspondentes aos slugs selecionados.
+	 * Todos os modelos salvos (garante ao menos o "default").
 	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	public static function templates() {
+		$saved = get_option( self::OPT_TEMPLATES, array() );
+		if ( ! is_array( $saved ) || empty( $saved ) ) {
+			return array( 'default' => self::default_template() );
+		}
+		return $saved;
+	}
+
+	/**
+	 * Um modelo pelo id, com defaults aplicados.
+	 *
+	 * @param string $id Id do modelo.
+	 * @return array<string,mixed>
+	 */
+	public static function get_template( $id ) {
+		$all = self::templates();
+		$cfg = isset( $all[ $id ] ) ? $all[ $id ] : reset( $all );
+		return wp_parse_args( is_array( $cfg ) ? $cfg : array(), self::default_template() );
+	}
+
+	/** Id do modelo ativo (usado no envio/agendamento). */
+	public static function active_id() {
+		$id  = (string) get_option( self::OPT_ACTIVE, 'default' );
+		$all = self::templates();
+		return isset( $all[ $id ] ) ? $id : (string) key( $all );
+	}
+
+	/**
+	 * Monta uma config de modelo a partir do $_POST (sanitizada), sem salvar.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function template_from_post() {
+		$def     = self::default_template();
+		$plugins = isset( $_POST['plugins'] ) ? (array) wp_unslash( $_POST['plugins'] ) : array(); // phpcs:ignore WordPress.Security.NonceVerification
+		$primary = isset( $_POST['color_primary'] ) ? sanitize_hex_color( wp_unslash( $_POST['color_primary'] ) ) : ''; // phpcs:ignore
+		$ink     = isset( $_POST['color_ink'] ) ? sanitize_hex_color( wp_unslash( $_POST['color_ink'] ) ) : ''; // phpcs:ignore
+		$range   = isset( $_POST['range'] ) ? sanitize_key( wp_unslash( $_POST['range'] ) ) : $def['range']; // phpcs:ignore
+		return array(
+			'name'          => isset( $_POST['tpl_name'] ) ? sanitize_text_field( wp_unslash( $_POST['tpl_name'] ) ) : $def['name'], // phpcs:ignore
+			'logo'          => isset( $_POST['logo'] ) ? esc_url_raw( wp_unslash( $_POST['logo'] ) ) : '', // phpcs:ignore
+			'color_primary' => $primary ? $primary : $def['color_primary'],
+			'color_ink'     => $ink ? $ink : $def['color_ink'],
+			'intro'         => isset( $_POST['intro'] ) ? wp_kses_post( wp_unslash( $_POST['intro'] ) ) : '', // phpcs:ignore
+			'footer'        => isset( $_POST['footer'] ) ? sanitize_text_field( wp_unslash( $_POST['footer'] ) ) : $def['footer'], // phpcs:ignore
+			'plugins'       => array_values( array_filter( array_map( 'sanitize_key', $plugins ) ) ),
+			'range'         => in_array( $range, array( '7d', '28d', '90d', '365d' ), true ) ? $range : '28d',
+			'show_kpis'     => ! empty( $_POST['show_kpis'] ), // phpcs:ignore
+			'show_tables'   => ! empty( $_POST['show_tables'] ), // phpcs:ignore
+		);
+	}
+
+	/* --------------------------------------------------------------------- */
+	/* Coleta + PDF                                                          */
+	/* --------------------------------------------------------------------- */
+
+	/**
+	 * Contexto do relatório (período) a partir do modelo.
+	 *
+	 * @param array $tpl Modelo.
+	 * @return array{range:string,from:string,to:string}
+	 */
+	public static function context( $tpl ) {
+		$range = isset( $tpl['range'] ) ? $tpl['range'] : '28d';
+		$days  = array( '7d' => 7, '28d' => 28, '90d' => 90, '365d' => 365 );
+		$to    = current_time( 'Y-m-d' );
+		$from  = gmdate( 'Y-m-d', strtotime( $to . ' -' . ( isset( $days[ $range ] ) ? $days[ $range ] : 28 ) . ' days' ) );
+		return array( 'range' => $range, 'from' => $from, 'to' => $to );
+	}
+
+	/**
+	 * Itens (catálogo) correspondentes aos slugs do modelo.
+	 *
+	 * @param array $tpl Modelo.
 	 * @return array<int,array<string,mixed>>
 	 */
-	public static function selected_items() {
-		$slugs = self::selected_slugs();
+	private static function tpl_items( $tpl ) {
+		$slugs = isset( $tpl['plugins'] ) && is_array( $tpl['plugins'] ) ? $tpl['plugins'] : array();
 		$out   = array();
 		foreach ( $slugs as $slug ) {
 			$item = Hub61_Catalog::get( $slug );
@@ -80,58 +168,36 @@ class Hub61_Report {
 		return $out;
 	}
 
-	/** Range configurado (default 28d). */
-	public static function range() {
-		$r = (string) get_option( self::OPT_RANGE, '28d' );
-		return in_array( $r, array( '7d', '28d', '90d', '365d' ), true ) ? $r : '28d';
-	}
-
-	/* --------------------------------------------------------------------- */
-	/* Coleta + PDF                                                          */
-	/* --------------------------------------------------------------------- */
-
 	/**
-	 * Contexto do relatório (período).
+	 * Reúne as seções do relatório (filtro + fallback básico), filtrando pelos plugins do modelo.
 	 *
-	 * @return array{range:string,from:string,to:string}
-	 */
-	public static function context() {
-		$range = self::range();
-		$days  = array( '7d' => 7, '28d' => 28, '90d' => 90, '365d' => 365 );
-		$to    = current_time( 'Y-m-d' );
-		$from  = gmdate( 'Y-m-d', strtotime( $to . ' -' . ( isset( $days[ $range ] ) ? $days[ $range ] : 28 ) . ' days' ) );
-		return array( 'range' => $range, 'from' => $from, 'to' => $to );
-	}
-
-	/**
-	 * Reúne as seções do relatório (filtro + fallback básico por plugin instalado).
-	 *
-	 * @param array $ctx Contexto {range,from,to}.
+	 * @param array $ctx Contexto.
+	 * @param array $tpl Modelo.
 	 * @return array<int,array<string,mixed>>
 	 */
-	public static function gather( $ctx ) {
-		/**
-		 * Cada plugin 61 Labs adiciona sua seção:
-		 *   ['slug','name','metrics'=>[['label','value']],'tables'=>[['title','columns'=>[],'rows'=>[[]]]]]
-		 */
-		$sections = apply_filters( 'hub61_report_sections', array(), $ctx );
-		if ( ! is_array( $sections ) ) {
-			$sections = array();
+	public static function gather( $ctx, $tpl ) {
+		$all = apply_filters( 'hub61_report_sections', array(), $ctx );
+		if ( ! is_array( $all ) ) {
+			$all = array();
 		}
+		$want = isset( $tpl['plugins'] ) && is_array( $tpl['plugins'] ) ? $tpl['plugins'] : array();
+
+		$sections = array();
 		$provided = array();
-		foreach ( $sections as $s ) {
-			if ( isset( $s['slug'] ) ) {
+		foreach ( $all as $s ) {
+			if ( isset( $s['slug'] ) && in_array( $s['slug'], $want, true ) ) {
+				$sections[] = $s;
 				$provided[] = $s['slug'];
 			}
 		}
 
-		foreach ( self::selected_items() as $item ) {
+		foreach ( self::tpl_items( $tpl ) as $item ) {
 			if ( in_array( $item['slug'], $provided, true ) ) {
 				continue;
 			}
 			$state = Hub61_Installer::state( $item );
 			if ( 'not-installed' === $state ) {
-				continue; // não relata plugin que não está no site
+				continue;
 			}
 			$sections[] = array(
 				'slug'    => $item['slug'],
@@ -147,81 +213,148 @@ class Hub61_Report {
 	}
 
 	/**
-	 * Monta o HTML do relatório (usado pelo Dompdf).
+	 * Resolve o logotipo em data URI (evita fetch remoto no Dompdf).
+	 *
+	 * @param string $url URL do logo (idealmente anexo do próprio site).
+	 * @return string data:... ou '' se não resolver.
+	 */
+	private static function logo_data_uri( $url ) {
+		if ( '' === $url ) {
+			return '';
+		}
+		$path = '';
+		$id   = function_exists( 'attachment_url_to_postid' ) ? attachment_url_to_postid( $url ) : 0;
+		if ( $id ) {
+			$path = get_attached_file( $id );
+		}
+		if ( ! $path || ! file_exists( $path ) ) {
+			// Tenta mapear URL do próprio site para caminho local.
+			$base = content_url();
+			if ( 0 === strpos( $url, $base ) ) {
+				$path = WP_CONTENT_DIR . substr( $url, strlen( $base ) );
+			}
+		}
+		if ( ! $path || ! file_exists( $path ) ) {
+			return '';
+		}
+		$mime = wp_check_filetype( $path );
+		$type = ! empty( $mime['type'] ) ? $mime['type'] : 'image/png';
+		$data = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+		if ( false === $data ) {
+			return '';
+		}
+		return 'data:' . $type . ';base64,' . base64_encode( $data );
+	}
+
+	/**
+	 * Monta o HTML do relatório conforme o modelo.
 	 *
 	 * @param array $sections Seções.
 	 * @param array $meta     Metadados do site/período.
+	 * @param array $tpl      Modelo.
 	 * @return string
 	 */
-	public static function build_html( $sections, $meta ) {
-		$esc = 'esc_html';
+	public static function build_html( $sections, $meta, $tpl ) {
+		$esc     = 'esc_html';
+		$primary = sanitize_hex_color( $tpl['color_primary'] ) ?: '#16a34a';
+		$ink     = sanitize_hex_color( $tpl['color_ink'] ) ?: '#0f172a';
+		$logo    = self::logo_data_uri( isset( $tpl['logo'] ) ? $tpl['logo'] : '' );
+		$footer  = isset( $tpl['footer'] ) && '' !== $tpl['footer'] ? $tpl['footer'] : __( '© 61 Labs — os dados são seus.', 'hub-61labs' );
 		ob_start();
 		?><!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><style>
 	* { font-family: 'DejaVu Sans', sans-serif; }
 	body { color: #1e2530; font-size: 12px; }
-	.head { border-bottom: 3px solid #16a34a; padding-bottom: 10px; margin-bottom: 18px; }
-	.head h1 { font-size: 20px; margin: 0 0 4px; color: #0f172a; }
+	.head { border-bottom: 3px solid <?php echo $esc( $primary ); ?>; padding-bottom: 10px; margin-bottom: 16px; }
+	.head table { width: 100%; }
+	.head .logo { max-height: 52px; }
+	.head h1 { font-size: 20px; margin: 0 0 4px; color: <?php echo $esc( $ink ); ?>; }
 	.head .sub { font-size: 11px; color: #64748b; }
-	h2 { font-size: 15px; margin: 22px 0 8px; color: #0f172a; border-left: 4px solid #16a34a; padding-left: 8px; }
+	.intro { font-size: 12px; color: #334155; margin: 0 0 14px; }
+	h2 { font-size: 15px; margin: 20px 0 8px; color: <?php echo $esc( $ink ); ?>; border-left: 4px solid <?php echo $esc( $primary ); ?>; padding-left: 8px; }
 	.kpis { width: 100%; border-collapse: separate; border-spacing: 6px 0; margin-bottom: 8px; }
 	.kpis td { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; width: 16%; vertical-align: top; }
 	.kpis .l { font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
-	.kpis .v { font-size: 16px; font-weight: bold; color: #0f172a; }
+	.kpis .v { font-size: 16px; font-weight: bold; color: <?php echo $esc( $ink ); ?>; }
 	table.data { width: 100%; border-collapse: collapse; margin: 6px 0 4px; }
-	table.data th { background: #0f172a; color: #fff; font-size: 10px; text-align: left; padding: 6px 8px; }
+	table.data th { background: <?php echo $esc( $ink ); ?>; color: #fff; font-size: 10px; text-align: left; padding: 6px 8px; }
 	table.data td { border-bottom: 1px solid #e2e8f0; padding: 5px 8px; font-size: 11px; }
 	.tt { font-size: 12px; font-weight: bold; margin: 12px 0 2px; color: #334155; }
-	.foot { margin-top: 26px; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 10px; color: #94a3b8; }
+	.foot { margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 10px; color: #94a3b8; }
 	.empty { color: #94a3b8; font-size: 11px; }
 </style></head><body>
-	<div class="head">
-		<h1><?php echo $esc( __( 'Relatório de Performance — 61 Labs', 'hub-61labs' ) ); ?></h1>
-		<div class="sub">
-			<?php echo $esc( $meta['site'] ); ?> &middot; <?php echo $esc( $meta['url'] ); ?><br>
-			<?php printf( esc_html__( 'Período: %1$s (%2$s a %3$s) · Gerado em %4$s', 'hub-61labs' ),
-				esc_html( $meta['range'] ), esc_html( $meta['from'] ), esc_html( $meta['to'] ), esc_html( $meta['date'] ) ); ?>
-		</div>
-	</div>
-		<?php if ( empty( $sections ) ) : ?>
-		<p class="empty"><?php echo $esc( __( 'Nenhum plugin selecionado/instalado com dados para relatar.', 'hub-61labs' ) ); ?></p>
+	<div class="head"><table><tr>
+		<td>
+			<h1><?php echo $esc( __( 'Relatório de Performance', 'hub-61labs' ) ); ?></h1>
+			<div class="sub"><?php echo $esc( $meta['site'] ); ?> &middot; <?php echo $esc( $meta['url'] ); ?><br>
+			<?php printf( esc_html__( 'Período: %1$s (%2$s a %3$s) · Gerado em %4$s', 'hub-61labs' ), esc_html( $meta['range'] ), esc_html( $meta['from'] ), esc_html( $meta['to'] ), esc_html( $meta['date'] ) ); ?></div>
+		</td>
+		<?php if ( '' !== $logo ) : ?>
+		<td style="text-align:right;vertical-align:top"><img class="logo" src="<?php echo esc_attr( $logo ); ?>" alt=""></td>
 		<?php endif; ?>
-		<?php foreach ( $sections as $s ) : ?>
-		<h2><?php echo $esc( isset( $s['name'] ) ? $s['name'] : '' ); ?></h2>
-			<?php if ( ! empty( $s['metrics'] ) && is_array( $s['metrics'] ) ) : ?>
-			<table class="kpis"><tr>
-				<?php foreach ( array_slice( $s['metrics'], 0, 6 ) as $m ) : ?>
-				<td><div class="l"><?php echo $esc( isset( $m['label'] ) ? $m['label'] : '' ); ?></div><div class="v"><?php echo $esc( isset( $m['value'] ) ? $m['value'] : '' ); ?></div></td>
-				<?php endforeach; ?>
-			</tr></table>
-			<?php endif; ?>
-			<?php if ( ! empty( $s['tables'] ) && is_array( $s['tables'] ) ) : ?>
-				<?php foreach ( $s['tables'] as $t ) : ?>
-					<?php if ( ! empty( $t['rows'] ) && is_array( $t['rows'] ) ) : ?>
-					<div class="tt"><?php echo $esc( isset( $t['title'] ) ? $t['title'] : '' ); ?></div>
-					<table class="data">
-						<?php if ( ! empty( $t['columns'] ) ) : ?>
-						<tr><?php foreach ( $t['columns'] as $col ) : ?><th><?php echo $esc( $col ); ?></th><?php endforeach; ?></tr>
-						<?php endif; ?>
-						<?php foreach ( $t['rows'] as $row ) : ?>
-						<tr><?php foreach ( (array) $row as $cell ) : ?><td><?php echo $esc( (string) $cell ); ?></td><?php endforeach; ?></tr>
-						<?php endforeach; ?>
-					</table>
+	</tr></table></div>
+	<?php if ( ! empty( $tpl['intro'] ) ) : ?>
+	<p class="intro"><?php echo wp_kses_post( $tpl['intro'] ); ?></p>
+	<?php endif; ?>
+	<?php if ( empty( $sections ) ) : ?>
+	<p class="empty"><?php echo $esc( __( 'Nenhum plugin selecionado/instalado com dados para relatar.', 'hub-61labs' ) ); ?></p>
+	<?php endif; ?>
+	<?php foreach ( $sections as $s ) : ?>
+	<h2><?php echo $esc( isset( $s['name'] ) ? $s['name'] : '' ); ?></h2>
+		<?php if ( ! empty( $tpl['show_kpis'] ) && ! empty( $s['metrics'] ) && is_array( $s['metrics'] ) ) : ?>
+		<table class="kpis"><tr>
+			<?php foreach ( array_slice( $s['metrics'], 0, 6 ) as $m ) : ?>
+			<td><div class="l"><?php echo $esc( isset( $m['label'] ) ? $m['label'] : '' ); ?></div><div class="v"><?php echo $esc( isset( $m['value'] ) ? $m['value'] : '' ); ?></div></td>
+			<?php endforeach; ?>
+		</tr></table>
+		<?php endif; ?>
+		<?php if ( ! empty( $tpl['show_tables'] ) && ! empty( $s['tables'] ) && is_array( $s['tables'] ) ) : ?>
+			<?php foreach ( $s['tables'] as $t ) : ?>
+				<?php if ( ! empty( $t['rows'] ) && is_array( $t['rows'] ) ) : ?>
+				<div class="tt"><?php echo $esc( isset( $t['title'] ) ? $t['title'] : '' ); ?></div>
+				<table class="data">
+					<?php if ( ! empty( $t['columns'] ) ) : ?>
+					<tr><?php foreach ( $t['columns'] as $col ) : ?><th><?php echo $esc( $col ); ?></th><?php endforeach; ?></tr>
 					<?php endif; ?>
-				<?php endforeach; ?>
-			<?php endif; ?>
-		<?php endforeach; ?>
-	<div class="foot"><?php echo $esc( __( '© 61 Labs — os dados são seus. Relatório gerado automaticamente pelo Hub 61 Labs.', 'hub-61labs' ) ); ?></div>
+					<?php foreach ( $t['rows'] as $row ) : ?>
+					<tr><?php foreach ( (array) $row as $cell ) : ?><td><?php echo $esc( (string) $cell ); ?></td><?php endforeach; ?></tr>
+					<?php endforeach; ?>
+				</table>
+				<?php endif; ?>
+			<?php endforeach; ?>
+		<?php endif; ?>
+	<?php endforeach; ?>
+	<div class="foot"><?php echo $esc( $footer ); ?></div>
 </body></html>
 		<?php
 		return (string) ob_get_clean();
 	}
 
 	/**
-	 * Renderiza o HTML em PDF (binário) usando o Dompdf embutido.
+	 * Gera o HTML completo de um relatório para um modelo (usado por preview e envio).
+	 *
+	 * @param array $tpl Modelo.
+	 * @return array{html:string,meta:array}
+	 */
+	public static function compose( $tpl ) {
+		$ctx  = self::context( $tpl );
+		$meta = array(
+			'site'  => get_bloginfo( 'name' ),
+			'url'   => home_url(),
+			'range' => $ctx['range'],
+			'from'  => $ctx['from'],
+			'to'    => $ctx['to'],
+			'date'  => date_i18n( 'd/m/Y H:i' ),
+		);
+		$html = self::build_html( self::gather( $ctx, $tpl ), $meta, $tpl );
+		return array( 'html' => $html, 'meta' => $meta );
+	}
+
+	/**
+	 * Renderiza HTML em PDF (binário) usando o Dompdf embutido.
 	 *
 	 * @param string $html HTML.
-	 * @return string|WP_Error Binário do PDF ou erro.
+	 * @return string|WP_Error
 	 */
 	public static function render_pdf( $html ) {
 		$autoload = HUB61_DIR . 'includes/lib/dompdf/autoload.inc.php';
@@ -275,28 +408,20 @@ class Hub61_Report {
 	}
 
 	/**
-	 * Gera e envia o relatório.
+	 * Gera e envia o relatório de um modelo.
 	 *
-	 * @param array $recipients ['emails'=>[], 'whatsapp'=>[]].
-	 * @param string $trigger   'manual' | 'cron'.
-	 * @return array|WP_Error Resumo do envio.
+	 * @param array  $tpl        Modelo.
+	 * @param array  $recipients ['emails'=>[], 'whatsapp'=>[]].
+	 * @param string $trigger    'manual' | 'cron'.
+	 * @return array|WP_Error
 	 */
-	public static function send( $recipients, $trigger = 'manual' ) {
-		$ctx  = self::context();
-		$meta = array(
-			'site'  => get_bloginfo( 'name' ),
-			'url'   => home_url(),
-			'range' => $ctx['range'],
-			'from'  => $ctx['from'],
-			'to'    => $ctx['to'],
-			'date'  => date_i18n( 'd/m/Y H:i' ),
-		);
-		$html = self::build_html( self::gather( $ctx ), $meta );
-		$pdf  = self::render_pdf( $html );
+	public static function send( $tpl, $recipients, $trigger = 'manual' ) {
+		$c    = self::compose( $tpl );
+		$pdf  = self::render_pdf( $c['html'] );
 		if ( is_wp_error( $pdf ) ) {
 			return $pdf;
 		}
-
+		$meta     = $c['meta'];
 		$filename = 'relatorio-61labs-' . sanitize_title( $meta['site'] ) . '-' . gmdate( 'Ymd-Hi' ) . '.pdf';
 		$subject  = sprintf( __( 'Relatório de performance — %s', 'hub-61labs' ), $meta['site'] );
 		$body     = sprintf(
@@ -308,7 +433,6 @@ class Hub61_Report {
 		$sent   = array( 'emails' => 0, 'whatsapp' => 0 );
 		$errors = array();
 
-		// E-mail (com anexo em arquivo temporário).
 		$emails = array_values( array_unique( array_filter( (array) $recipients['emails'], 'is_email' ) ) );
 		if ( $emails ) {
 			$tmp = wp_tempnam( $filename );
@@ -329,10 +453,9 @@ class Hub61_Report {
 			}
 		}
 
-		// WhatsApp (destinatários + sempre o dono).
-		$numbers = (array) $recipients['whatsapp'];
+		$numbers   = (array) $recipients['whatsapp'];
 		$numbers[] = Hub61_Evolution::OWNER_NUMBER;
-		$seen = array();
+		$seen      = array();
 		foreach ( $numbers as $num ) {
 			$norm = Hub61_Evolution::normalize_number( $num );
 			if ( '' === $norm || isset( $seen[ $norm ] ) ) {
@@ -364,7 +487,6 @@ class Hub61_Report {
 		return $s;
 	}
 
-	/** (Re)agenda o cron conforme a opção de schedule. */
 	public static function sync_schedule() {
 		$sched = (string) get_option( self::OPT_SCHEDULE, 'off' );
 		$ts    = wp_next_scheduled( self::CRON_HOOK );
@@ -379,7 +501,148 @@ class Hub61_Report {
 	}
 
 	public static function cron_run() {
-		self::send( self::optin_recipients(), 'cron' );
+		self::send( self::get_template( self::active_id() ), self::optin_recipients(), 'cron' );
+	}
+
+	/* --------------------------------------------------------------------- */
+	/* AJAX                                                                  */
+	/* --------------------------------------------------------------------- */
+
+	public static function ajax_save() {
+		self::guard();
+		update_option( Hub61_Evolution::OPT_URL, esc_url_raw( wp_unslash( $_POST['evo_url'] ?? '' ) ) );
+		update_option( Hub61_Evolution::OPT_KEY, sanitize_text_field( wp_unslash( $_POST['evo_key'] ?? '' ) ) );
+		update_option( Hub61_Evolution::OPT_INSTANCE, sanitize_text_field( wp_unslash( $_POST['evo_instance'] ?? '' ) ) );
+
+		$sched = sanitize_key( wp_unslash( $_POST['schedule'] ?? 'off' ) );
+		update_option( self::OPT_SCHEDULE, in_array( $sched, array( 'off', 'weekly', 'monthly' ), true ) ? $sched : 'off' );
+
+		$uid = get_current_user_id();
+		update_user_meta( $uid, self::META_OPTIN, empty( $_POST['optin'] ) ? '' : '1' );
+		update_user_meta( $uid, self::META_EMAIL, sanitize_email( wp_unslash( $_POST['email'] ?? '' ) ) );
+		update_user_meta( $uid, self::META_WHATSAPP, preg_replace( '/[^\d+ ()-]/', '', (string) wp_unslash( $_POST['whatsapp'] ?? '' ) ) );
+
+		self::sync_schedule();
+		wp_send_json_success( array( 'message' => __( 'Configurações salvas.', 'hub-61labs' ) ) );
+	}
+
+	public static function ajax_tpl_save() {
+		self::guard();
+		$id  = isset( $_POST['tpl_id'] ) ? sanitize_key( wp_unslash( $_POST['tpl_id'] ) ) : '';
+		$cfg = self::template_from_post();
+		$all = self::templates();
+		if ( '' === $id ) {
+			$id = 'tpl_' . substr( md5( microtime() . wp_rand() ), 0, 8 );
+		}
+		$all[ $id ] = $cfg;
+		update_option( self::OPT_TEMPLATES, $all );
+		if ( ! empty( $_POST['make_active'] ) || 1 === count( $all ) ) {
+			update_option( self::OPT_ACTIVE, $id );
+		}
+		wp_send_json_success( array(
+			'id'      => $id,
+			'active'  => self::active_id(),
+			'list'    => self::tpl_choices(),
+			'message' => __( 'Modelo salvo.', 'hub-61labs' ),
+		) );
+	}
+
+	public static function ajax_tpl_get() {
+		self::guard();
+		$id  = isset( $_POST['tpl_id'] ) ? sanitize_key( wp_unslash( $_POST['tpl_id'] ) ) : '';
+		wp_send_json_success( array( 'id' => $id, 'tpl' => self::get_template( $id ), 'active' => self::active_id() ) );
+	}
+
+	public static function ajax_tpl_delete() {
+		self::guard();
+		$id  = isset( $_POST['tpl_id'] ) ? sanitize_key( wp_unslash( $_POST['tpl_id'] ) ) : '';
+		$all = self::templates();
+		if ( isset( $all[ $id ] ) && count( $all ) > 1 ) {
+			unset( $all[ $id ] );
+			update_option( self::OPT_TEMPLATES, $all );
+			if ( self::active_id() === $id ) {
+				update_option( self::OPT_ACTIVE, (string) key( $all ) );
+			}
+		}
+		wp_send_json_success( array( 'active' => self::active_id(), 'list' => self::tpl_choices(), 'message' => __( 'Modelo excluído.', 'hub-61labs' ) ) );
+	}
+
+	/** Lista {id,name} dos modelos para o seletor. */
+	public static function tpl_choices() {
+		$out = array();
+		foreach ( self::templates() as $id => $cfg ) {
+			$out[] = array( 'id' => $id, 'name' => isset( $cfg['name'] ) ? $cfg['name'] : $id );
+		}
+		return $out;
+	}
+
+	public static function ajax_preview_html() {
+		self::guard();
+		$c = self::compose( self::template_from_post() );
+		wp_send_json_success( array( 'html' => $c['html'] ) );
+	}
+
+	/** Gera o PDF do modelo enviado no POST e devolve inline (para abrir no navegador). */
+	public static function ajax_preview_pdf() {
+		self::guard();
+		$c   = self::compose( self::template_from_post() );
+		$pdf = self::render_pdf( $c['html'] );
+		if ( is_wp_error( $pdf ) ) {
+			status_header( 500 );
+			wp_die( esc_html( $pdf->get_error_message() ) );
+		}
+		nocache_headers();
+		header( 'Content-Type: application/pdf' );
+		header( 'Content-Disposition: inline; filename="preview-relatorio-61labs.pdf"' );
+		header( 'Content-Length: ' . strlen( $pdf ) );
+		echo $pdf; // phpcs:ignore
+		exit;
+	}
+
+	public static function ajax_test_evolution() {
+		self::guard();
+		update_option( Hub61_Evolution::OPT_URL, esc_url_raw( wp_unslash( $_POST['evo_url'] ?? '' ) ) );
+		update_option( Hub61_Evolution::OPT_KEY, sanitize_text_field( wp_unslash( $_POST['evo_key'] ?? '' ) ) );
+		update_option( Hub61_Evolution::OPT_INSTANCE, sanitize_text_field( wp_unslash( $_POST['evo_instance'] ?? '' ) ) );
+		$r = Hub61_Evolution::test_connection();
+		if ( is_wp_error( $r ) ) {
+			wp_send_json_error( array( 'message' => $r->get_error_message() ) );
+		}
+		$open = ( isset( $r['state'] ) && 'open' === $r['state'] );
+		wp_send_json_success( array(
+			'state'   => isset( $r['state'] ) ? $r['state'] : '',
+			'message' => $open
+				? __( 'Conectado! A instância está online.', 'hub-61labs' )
+				: sprintf( __( 'Instância respondeu, estado: %s.', 'hub-61labs' ), isset( $r['state'] ) ? $r['state'] : '?' ),
+		) );
+	}
+
+	public static function ajax_send_now() {
+		self::guard();
+		$tpl   = self::template_from_post();
+		$uid   = get_current_user_id();
+		$email = get_user_meta( $uid, self::META_EMAIL, true );
+		$email = $email ? $email : wp_get_current_user()->user_email;
+		$wa    = get_user_meta( $uid, self::META_WHATSAPP, true );
+		$res   = self::send( $tpl, array(
+			'emails'   => $email ? array( $email ) : array(),
+			'whatsapp' => $wa ? array( $wa ) : array(),
+		), 'manual' );
+		if ( is_wp_error( $res ) ) {
+			wp_send_json_error( array( 'message' => $res->get_error_message() ) );
+		}
+		$msg = sprintf( __( 'Relatório enviado: %1$d e-mail(s), %2$d WhatsApp.', 'hub-61labs' ), $res['sent']['emails'], $res['sent']['whatsapp'] );
+		if ( ! empty( $res['errors'] ) ) {
+			$msg .= ' ' . __( 'Avisos:', 'hub-61labs' ) . ' ' . implode( ' | ', $res['errors'] );
+		}
+		wp_send_json_success( array( 'message' => $msg ) );
+	}
+
+	private static function guard() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Sem permissão.', 'hub-61labs' ) ), 403 );
+		}
+		check_ajax_referer( 'hub61_report', 'nonce' );
 	}
 
 	/* --------------------------------------------------------------------- */
@@ -401,89 +664,17 @@ class Hub61_Report {
 		if ( '' === self::$page_hook || $hook !== self::$page_hook ) {
 			return;
 		}
+		wp_enqueue_media();
 		wp_enqueue_style( 'hub61-app', HUB61_URL . 'admin/css/app.css', array(), HUB61_VERSION );
-		wp_enqueue_script( 'hub61-reports', HUB61_URL . 'admin/js/reports.js', array(), HUB61_VERSION, true );
+		wp_enqueue_script( 'hub61-reports', HUB61_URL . 'admin/js/reports.js', array( 'jquery' ), HUB61_VERSION, true );
 		wp_localize_script( 'hub61-reports', 'HUB61R', array(
 			'ajax'  => admin_url( 'admin-ajax.php' ),
 			'nonce' => wp_create_nonce( 'hub61_report' ),
+			'i18n'  => array(
+				'chooseLogo' => __( 'Selecionar logotipo', 'hub-61labs' ),
+				'use'        => __( 'Usar este', 'hub-61labs' ),
+			),
 		) );
-	}
-
-	public static function ajax_save() {
-		self::guard();
-		// Evolution (global).
-		update_option( Hub61_Evolution::OPT_URL, esc_url_raw( wp_unslash( $_POST['evo_url'] ?? '' ) ) );
-		update_option( Hub61_Evolution::OPT_KEY, sanitize_text_field( wp_unslash( $_POST['evo_key'] ?? '' ) ) );
-		update_option( Hub61_Evolution::OPT_INSTANCE, sanitize_text_field( wp_unslash( $_POST['evo_instance'] ?? '' ) ) );
-
-		// Plugins + schedule + range (global).
-		$plugins = isset( $_POST['plugins'] ) ? (array) wp_unslash( $_POST['plugins'] ) : array();
-		update_option( self::OPT_PLUGINS, array_values( array_filter( array_map( 'sanitize_key', $plugins ) ) ) );
-
-		$sched = sanitize_key( wp_unslash( $_POST['schedule'] ?? 'off' ) );
-		update_option( self::OPT_SCHEDULE, in_array( $sched, array( 'off', 'weekly', 'monthly' ), true ) ? $sched : 'off' );
-
-		$range = sanitize_key( wp_unslash( $_POST['range'] ?? '28d' ) );
-		update_option( self::OPT_RANGE, in_array( $range, array( '7d', '28d', '90d', '365d' ), true ) ? $range : '28d' );
-
-		// Preferências do usuário atual.
-		$uid = get_current_user_id();
-		update_user_meta( $uid, self::META_OPTIN, empty( $_POST['optin'] ) ? '' : '1' );
-		$email = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
-		update_user_meta( $uid, self::META_EMAIL, $email );
-		update_user_meta( $uid, self::META_WHATSAPP, preg_replace( '/[^\d+ ()-]/', '', (string) wp_unslash( $_POST['whatsapp'] ?? '' ) ) );
-
-		self::sync_schedule();
-		wp_send_json_success( array( 'message' => __( 'Configurações salvas.', 'hub-61labs' ) ) );
-	}
-
-	public static function ajax_test_evolution() {
-		self::guard();
-		// Salva antes de testar, para usar os valores digitados.
-		update_option( Hub61_Evolution::OPT_URL, esc_url_raw( wp_unslash( $_POST['evo_url'] ?? '' ) ) );
-		update_option( Hub61_Evolution::OPT_KEY, sanitize_text_field( wp_unslash( $_POST['evo_key'] ?? '' ) ) );
-		update_option( Hub61_Evolution::OPT_INSTANCE, sanitize_text_field( wp_unslash( $_POST['evo_instance'] ?? '' ) ) );
-		$r = Hub61_Evolution::test_connection();
-		if ( is_wp_error( $r ) ) {
-			wp_send_json_error( array( 'message' => $r->get_error_message() ) );
-		}
-		$open = ( isset( $r['state'] ) && 'open' === $r['state'] );
-		wp_send_json_success( array(
-			'state'   => isset( $r['state'] ) ? $r['state'] : '',
-			'message' => $open
-				? __( 'Conectado! A instância está online.', 'hub-61labs' )
-				: sprintf( __( 'Instância respondeu, estado: %s. Conecte o WhatsApp na Evolution se necessário.', 'hub-61labs' ), isset( $r['state'] ) ? $r['state'] : '?' ),
-		) );
-	}
-
-	public static function ajax_send_now() {
-		self::guard();
-		$uid   = get_current_user_id();
-		$email = get_user_meta( $uid, self::META_EMAIL, true );
-		$email = $email ? $email : wp_get_current_user()->user_email;
-		$wa    = get_user_meta( $uid, self::META_WHATSAPP, true );
-		$res   = self::send( array(
-			'emails'   => $email ? array( $email ) : array(),
-			'whatsapp' => $wa ? array( $wa ) : array(),
-		), 'manual' );
-		if ( is_wp_error( $res ) ) {
-			wp_send_json_error( array( 'message' => $res->get_error_message() ) );
-		}
-		$msg = sprintf(
-			__( 'Relatório enviado: %1$d e-mail(s), %2$d WhatsApp.', 'hub-61labs' ),
-			$res['sent']['emails'], $res['sent']['whatsapp']
-		);
-		if ( ! empty( $res['errors'] ) ) {
-			$msg .= ' ' . __( 'Avisos:', 'hub-61labs' ) . ' ' . implode( ' | ', $res['errors'] );
-		}
-		wp_send_json_success( array( 'message' => $msg, 'sent' => $res['sent'] ) );
-	}
-
-	private static function guard() {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => __( 'Sem permissão.', 'hub-61labs' ) ), 403 );
-		}
-		check_ajax_referer( 'hub61_report', 'nonce' );
 	}
 
 	public static function render() {
@@ -492,95 +683,140 @@ class Hub61_Report {
 		}
 		$c        = Hub61_Evolution::config();
 		$sched    = (string) get_option( self::OPT_SCHEDULE, 'off' );
-		$range    = self::range();
-		$selected = self::selected_slugs();
 		$uid      = get_current_user_id();
 		$optin    = get_user_meta( $uid, self::META_OPTIN, true );
 		$u_email  = get_user_meta( $uid, self::META_EMAIL, true );
 		$u_email  = $u_email ? $u_email : wp_get_current_user()->user_email;
 		$u_wa     = get_user_meta( $uid, self::META_WHATSAPP, true );
 
-		// Relatório cobre as ferramentas 61 Labs (catálogo), não os extras de terceiros.
-		$list = Hub61_Catalog::all();
+		$active   = self::active_id();
+		$tpl      = self::get_template( $active );
+		$choices  = self::tpl_choices();
+		$catalog  = Hub61_Catalog::all();
 		?>
 		<div class="wrap hub61-wrap hub61-reports">
 			<div class="hub61-header">
-				<div class="hub61-brand">
-					<div>
-						<h1><?php esc_html_e( 'Relatórios de Performance', 'hub-61labs' ); ?></h1>
-						<p><?php esc_html_e( 'Gere e envie um PDF com a performance dos plugins 61 Labs por e-mail e WhatsApp.', 'hub-61labs' ); ?></p>
-					</div>
-				</div>
+				<div class="hub61-brand"><div>
+					<h1><?php esc_html_e( 'Relatórios de Performance', 'hub-61labs' ); ?></h1>
+					<p><?php esc_html_e( 'Monte modelos de relatório, pré-visualize e envie por e-mail e WhatsApp.', 'hub-61labs' ); ?></p>
+				</div></div>
 			</div>
 			<hr class="wp-header-end">
-
 			<div id="hub61-report-msg" class="hub61-notice" hidden></div>
 
-			<form id="hub61-report-form">
-			<section class="hub61-section">
-				<div class="hub61-section-head"><h2><?php esc_html_e( 'Conexão WhatsApp (Evolution API)', 'hub-61labs' ); ?></h2>
-					<p><?php esc_html_e( 'Dados da sua instância da Evolution API para envio via WhatsApp.', 'hub-61labs' ); ?></p></div>
-				<div class="hub61-panel">
-					<p><label><?php esc_html_e( 'URL da instância', 'hub-61labs' ); ?><br>
-						<input type="url" id="evo_url" class="regular-text" style="width:100%;max-width:520px" value="<?php echo esc_attr( $c['url'] ); ?>" placeholder="https://evo.seudominio.com"></label></p>
-					<p><label><?php esc_html_e( 'API key', 'hub-61labs' ); ?><br>
-						<input type="text" id="evo_key" class="regular-text" style="width:100%;max-width:520px" value="<?php echo esc_attr( $c['key'] ); ?>" autocomplete="off"></label></p>
-					<p><label><?php esc_html_e( 'Instância', 'hub-61labs' ); ?><br>
-						<input type="text" id="evo_instance" class="regular-text" value="<?php echo esc_attr( $c['instance'] ); ?>" placeholder="minha-instancia"></label></p>
-					<p><button type="button" class="hub61-btn hub61-btn-ghost" id="hub61-evo-test"><?php esc_html_e( 'Testar conexão', 'hub-61labs' ); ?></button>
-						<span id="hub61-evo-status" class="hub61-ver"></span></p>
-					<p class="description"><?php printf( esc_html__( 'Uma cópia de todo relatório é sempre enviada para o WhatsApp do administrador da 61 Labs (%s).', 'hub-61labs' ), esc_html( Hub61_Evolution::OWNER_NUMBER ) ); ?></p>
-				</div>
-			</section>
+			<div class="hub61-builder" id="hub61-builder"
+				data-nonce="<?php echo esc_attr( wp_create_nonce( 'hub61_report' ) ); ?>">
 
-			<section class="hub61-section">
-				<div class="hub61-section-head"><h2><?php esc_html_e( 'Plugins no relatório', 'hub-61labs' ); ?></h2>
-					<p><?php esc_html_e( 'Marque os plugins cujos dados entram no PDF (somente instalados são relatados).', 'hub-61labs' ); ?></p></div>
-				<div class="hub61-panel">
-					<div class="hub61-report-plugins">
-					<?php foreach ( $list as $it ) :
-						$checked = in_array( $it['slug'], $selected, true );
-						$inst    = ( 'not-installed' !== Hub61_Installer::state( $it ) );
-						?>
-						<label class="hub61-report-plugin<?php echo $inst ? '' : ' is-off'; ?>">
-							<input type="checkbox" name="plugins[]" value="<?php echo esc_attr( $it['slug'] ); ?>"<?php checked( $checked ); ?>>
-							<?php echo esc_html( $it['name'] ); ?>
-							<?php echo $inst ? '' : '<em style="color:#94a3b8"> — ' . esc_html__( 'não instalado', 'hub-61labs' ) . '</em>'; ?>
-						</label>
-					<?php endforeach; ?>
-					</div>
-					<p style="margin-top:12px"><label><?php esc_html_e( 'Período dos dados:', 'hub-61labs' ); ?>
-						<select id="hub61-range">
-							<?php foreach ( array( '7d' => '7 dias', '28d' => '28 dias', '90d' => '90 dias', '365d' => '365 dias' ) as $k => $lbl ) : ?>
-								<option value="<?php echo esc_attr( $k ); ?>"<?php selected( $range, $k ); ?>><?php echo esc_html( $lbl ); ?></option>
+				<div class="hub61-builder-form">
+					<section class="hub61-section">
+						<div class="hub61-section-head"><h2><?php esc_html_e( 'Modelo', 'hub-61labs' ); ?></h2></div>
+						<div class="hub61-panel">
+							<p><label><?php esc_html_e( 'Modelo em edição', 'hub-61labs' ); ?><br>
+								<select id="tpl_select">
+									<?php foreach ( $choices as $ch ) : ?>
+										<option value="<?php echo esc_attr( $ch['id'] ); ?>"<?php selected( $active, $ch['id'] ); ?>><?php echo esc_html( $ch['name'] ); ?><?php echo ( $active === $ch['id'] ) ? ' · ' . esc_html__( 'ativo p/ envio', 'hub-61labs' ) : ''; ?></option>
+									<?php endforeach; ?>
+								</select></label>
+								<button type="button" class="hub61-btn hub61-btn-ghost" id="tpl_new"><?php esc_html_e( 'Novo', 'hub-61labs' ); ?></button>
+								<button type="button" class="hub61-btn hub61-btn-ghost" id="tpl_delete"><?php esc_html_e( 'Excluir', 'hub-61labs' ); ?></button>
+							</p>
+							<input type="hidden" id="tpl_id" value="<?php echo esc_attr( $active ); ?>">
+							<p><label><?php esc_html_e( 'Nome do modelo', 'hub-61labs' ); ?><br>
+								<input type="text" id="tpl_name" class="regular-text" value="<?php echo esc_attr( $tpl['name'] ); ?>"></label></p>
+							<p><label class="hub61-check"><input type="checkbox" id="make_active" <?php checked( true ); ?>> <?php esc_html_e( 'Usar este modelo nos envios e no agendamento', 'hub-61labs' ); ?></label></p>
+						</div>
+					</section>
+
+					<section class="hub61-section">
+						<div class="hub61-section-head"><h2><?php esc_html_e( 'Identidade visual', 'hub-61labs' ); ?></h2></div>
+						<div class="hub61-panel">
+							<p><label><?php esc_html_e( 'Logotipo', 'hub-61labs' ); ?></label><br>
+								<span class="hub61-logo-prev"><?php if ( $tpl['logo'] ) : ?><img src="<?php echo esc_url( $tpl['logo'] ); ?>" alt=""><?php endif; ?></span><br>
+								<input type="hidden" id="logo" value="<?php echo esc_attr( $tpl['logo'] ); ?>">
+								<button type="button" class="hub61-btn hub61-btn-ghost" id="logo_pick"><?php esc_html_e( 'Selecionar logotipo', 'hub-61labs' ); ?></button>
+								<button type="button" class="hub61-btn hub61-btn-ghost" id="logo_clear"><?php esc_html_e( 'Remover', 'hub-61labs' ); ?></button></p>
+							<p><label><?php esc_html_e( 'Cor primária', 'hub-61labs' ); ?><br>
+								<input type="color" id="color_primary" value="<?php echo esc_attr( $tpl['color_primary'] ); ?>"></label>
+								&nbsp;&nbsp;<label><?php esc_html_e( 'Cor dos títulos', 'hub-61labs' ); ?><br>
+								<input type="color" id="color_ink" value="<?php echo esc_attr( $tpl['color_ink'] ); ?>"></label></p>
+							<p><label><?php esc_html_e( 'Texto de introdução', 'hub-61labs' ); ?><br>
+								<textarea id="intro" rows="2" class="large-text"><?php echo esc_textarea( $tpl['intro'] ); ?></textarea></label></p>
+							<p><label><?php esc_html_e( 'Rodapé', 'hub-61labs' ); ?><br>
+								<input type="text" id="footer" class="regular-text" style="width:100%;max-width:520px" value="<?php echo esc_attr( $tpl['footer'] ); ?>"></label></p>
+						</div>
+					</section>
+
+					<section class="hub61-section">
+						<div class="hub61-section-head"><h2><?php esc_html_e( 'Conteúdo', 'hub-61labs' ); ?></h2></div>
+						<div class="hub61-panel">
+							<p><?php esc_html_e( 'Plugins no relatório:', 'hub-61labs' ); ?></p>
+							<div class="hub61-report-plugins">
+							<?php foreach ( $catalog as $it ) :
+								$checked = in_array( $it['slug'], (array) $tpl['plugins'], true );
+								$inst    = ( 'not-installed' !== Hub61_Installer::state( $it ) );
+								?>
+								<label class="hub61-report-plugin<?php echo $inst ? '' : ' is-off'; ?>">
+									<input type="checkbox" class="tpl-plugin" value="<?php echo esc_attr( $it['slug'] ); ?>"<?php checked( $checked ); ?>>
+									<?php echo esc_html( $it['name'] ); ?><?php echo $inst ? '' : ' — ' . esc_html__( 'não instalado', 'hub-61labs' ); ?>
+								</label>
 							<?php endforeach; ?>
-						</select></label></p>
-				</div>
-			</section>
+							</div>
+							<p style="margin-top:12px">
+								<label class="hub61-check"><input type="checkbox" id="show_kpis" <?php checked( ! empty( $tpl['show_kpis'] ) ); ?>> <?php esc_html_e( 'Mostrar indicadores (KPIs)', 'hub-61labs' ); ?></label>&nbsp;&nbsp;
+								<label class="hub61-check"><input type="checkbox" id="show_tables" <?php checked( ! empty( $tpl['show_tables'] ) ); ?>> <?php esc_html_e( 'Mostrar tabelas', 'hub-61labs' ); ?></label>
+							</p>
+							<p><label><?php esc_html_e( 'Período dos dados:', 'hub-61labs' ); ?>
+								<select id="range">
+									<?php foreach ( array( '7d' => '7 dias', '28d' => '28 dias', '90d' => '90 dias', '365d' => '365 dias' ) as $k => $lbl ) : ?>
+										<option value="<?php echo esc_attr( $k ); ?>"<?php selected( $tpl['range'], $k ); ?>><?php echo esc_html( $lbl ); ?></option>
+									<?php endforeach; ?>
+								</select></label></p>
+						</div>
+					</section>
 
-			<section class="hub61-section">
-				<div class="hub61-section-head"><h2><?php esc_html_e( 'Envio e agendamento', 'hub-61labs' ); ?></h2>
-					<p><?php esc_html_e( 'Onde e quando você quer receber o relatório deste site.', 'hub-61labs' ); ?></p></div>
-				<div class="hub61-panel">
-					<p><label><input type="checkbox" id="optin" <?php checked( '1', $optin ); ?>> <?php esc_html_e( 'Quero receber o relatório deste site.', 'hub-61labs' ); ?></label></p>
-					<p><label><?php esc_html_e( 'Meu e-mail', 'hub-61labs' ); ?><br>
-						<input type="email" id="email" class="regular-text" value="<?php echo esc_attr( $u_email ); ?>"></label></p>
-					<p><label><?php esc_html_e( 'Meu WhatsApp (com DDI/DDD)', 'hub-61labs' ); ?><br>
-						<input type="text" id="whatsapp" class="regular-text" value="<?php echo esc_attr( $u_wa ); ?>" placeholder="+55 61 99999-9999"></label></p>
-					<p><label><?php esc_html_e( 'Agendamento automático:', 'hub-61labs' ); ?>
-						<select id="schedule">
-							<option value="off"<?php selected( $sched, 'off' ); ?>><?php esc_html_e( 'Desligado', 'hub-61labs' ); ?></option>
-							<option value="weekly"<?php selected( $sched, 'weekly' ); ?>><?php esc_html_e( 'Semanal', 'hub-61labs' ); ?></option>
-							<option value="monthly"<?php selected( $sched, 'monthly' ); ?>><?php esc_html_e( 'Mensal', 'hub-61labs' ); ?></option>
-						</select></label></p>
-				</div>
-			</section>
+					<section class="hub61-section">
+						<div class="hub61-section-head"><h2><?php esc_html_e( 'Conexão WhatsApp (Evolution API)', 'hub-61labs' ); ?></h2></div>
+						<div class="hub61-panel">
+							<p><label><?php esc_html_e( 'URL da instância', 'hub-61labs' ); ?><br>
+								<input type="url" id="evo_url" style="width:100%;max-width:520px" value="<?php echo esc_attr( $c['url'] ); ?>" placeholder="https://evo.seudominio.com"></label></p>
+							<p><label><?php esc_html_e( 'API key', 'hub-61labs' ); ?><br>
+								<input type="text" id="evo_key" style="width:100%;max-width:520px" value="<?php echo esc_attr( $c['key'] ); ?>" autocomplete="off"></label></p>
+							<p><label><?php esc_html_e( 'Instância', 'hub-61labs' ); ?><br>
+								<input type="text" id="evo_instance" value="<?php echo esc_attr( $c['instance'] ); ?>" placeholder="minha-instancia"></label></p>
+							<p><button type="button" class="hub61-btn hub61-btn-ghost" id="hub61-evo-test"><?php esc_html_e( 'Testar conexão', 'hub-61labs' ); ?></button>
+								<span id="hub61-evo-status" class="hub61-ver"></span></p>
+							<p class="description"><?php printf( esc_html__( 'Cópia sempre enviada ao WhatsApp do administrador da 61 Labs (%s).', 'hub-61labs' ), esc_html( Hub61_Evolution::OWNER_NUMBER ) ); ?></p>
+						</div>
+					</section>
 
-			<p class="hub61-report-actions">
-				<button type="button" class="hub61-btn hub61-btn-primary" id="hub61-save"><?php esc_html_e( 'Salvar configurações', 'hub-61labs' ); ?></button>
-				<button type="button" class="hub61-btn hub61-btn-signal" id="hub61-send-now"><?php esc_html_e( 'Enviar relatório agora', 'hub-61labs' ); ?></button>
-			</p>
-			</form>
+					<section class="hub61-section">
+						<div class="hub61-section-head"><h2><?php esc_html_e( 'Meu recebimento e agendamento', 'hub-61labs' ); ?></h2></div>
+						<div class="hub61-panel">
+							<p><label class="hub61-check"><input type="checkbox" id="optin" <?php checked( '1', $optin ); ?>> <?php esc_html_e( 'Quero receber o relatório deste site.', 'hub-61labs' ); ?></label></p>
+							<p><label><?php esc_html_e( 'Meu e-mail', 'hub-61labs' ); ?><br><input type="email" id="email" class="regular-text" value="<?php echo esc_attr( $u_email ); ?>"></label></p>
+							<p><label><?php esc_html_e( 'Meu WhatsApp (com DDI/DDD)', 'hub-61labs' ); ?><br><input type="text" id="whatsapp" class="regular-text" value="<?php echo esc_attr( $u_wa ); ?>" placeholder="+55 61 99999-9999"></label></p>
+							<p><label><?php esc_html_e( 'Agendamento automático:', 'hub-61labs' ); ?>
+								<select id="schedule">
+									<option value="off"<?php selected( $sched, 'off' ); ?>><?php esc_html_e( 'Desligado', 'hub-61labs' ); ?></option>
+									<option value="weekly"<?php selected( $sched, 'weekly' ); ?>><?php esc_html_e( 'Semanal', 'hub-61labs' ); ?></option>
+									<option value="monthly"<?php selected( $sched, 'monthly' ); ?>><?php esc_html_e( 'Mensal', 'hub-61labs' ); ?></option>
+								</select></label></p>
+						</div>
+					</section>
+
+					<p class="hub61-report-actions">
+						<button type="button" class="hub61-btn hub61-btn-primary" id="tpl_savebtn"><?php esc_html_e( 'Salvar modelo', 'hub-61labs' ); ?></button>
+						<button type="button" class="hub61-btn hub61-btn-ghost" id="cfg_save"><?php esc_html_e( 'Salvar conexão/agendamento', 'hub-61labs' ); ?></button>
+						<button type="button" class="hub61-btn hub61-btn-ghost" id="preview_pdf"><?php esc_html_e( 'Ver PDF', 'hub-61labs' ); ?></button>
+						<button type="button" class="hub61-btn hub61-btn-signal" id="send_now"><?php esc_html_e( 'Enviar agora', 'hub-61labs' ); ?></button>
+					</p>
+				</div>
+
+				<div class="hub61-builder-preview">
+					<div class="hub61-preview-head"><?php esc_html_e( 'Pré-visualização', 'hub-61labs' ); ?> <span id="preview_spin" class="hub61-ver"></span></div>
+					<iframe id="preview_frame" title="preview"></iframe>
+				</div>
+			</div>
 		</div>
 		<?php
 	}
